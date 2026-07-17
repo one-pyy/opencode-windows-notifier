@@ -1,0 +1,85 @@
+import type { PluginConfig } from "./config"
+import type { LogicalEvent, LogicalEventType } from "./index"
+
+export interface EventPayload {
+  event: LogicalEventType
+  timestamp: string
+  session_title: string | null
+  project_name: string | null
+  duration_ms: number | null
+  message: string
+}
+
+const MESSAGE_PREFIX: Record<LogicalEventType, string> = {
+  permission: "Session needs permission",
+  question: "Session has a question",
+  complete: "Session has finished",
+  subagent_complete: "Subagent task completed",
+  error: "Session encountered an error",
+  cancelled: "Session was cancelled",
+}
+
+const WARNING_INTERVAL_MS = 30_000
+const lastWarningAtByTarget = new Map<string, number>()
+
+function warning(config: PluginConfig, message: string): void {
+  const now = Date.now()
+  const lastWarningAt = lastWarningAtByTarget.get(config.serverUrl) ?? 0
+  if (lastWarningAt > 0 && now - lastWarningAt < WARNING_INTERVAL_MS) {
+    return
+  }
+  lastWarningAtByTarget.set(config.serverUrl, now)
+  console.warn(`[opencode-windows-notifier] ${message}: ${config.serverUrl}`)
+}
+
+export function resetSenderWarnings(): void {
+  lastWarningAtByTarget.clear()
+}
+
+export function buildEventPayload(
+  logicalEvent: LogicalEvent,
+  projectName: string | null,
+  timestamp: Date = new Date(),
+): EventPayload {
+  const subject = logicalEvent.sessionTitle ?? projectName
+  return {
+    event: logicalEvent.event,
+    timestamp: timestamp.toISOString(),
+    session_title: logicalEvent.sessionTitle,
+    project_name: projectName,
+    duration_ms: logicalEvent.durationMs,
+    message: subject ? `${MESSAGE_PREFIX[logicalEvent.event]}: ${subject}` : MESSAGE_PREFIX[logicalEvent.event],
+  }
+}
+
+async function postEvent(config: PluginConfig, payload: EventPayload): Promise<void> {
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, config.timeoutMs)
+
+  try {
+    const response = await fetch(`${config.serverUrl}/v1/events`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      warning(config, `Server returned HTTP ${response.status}`)
+    }
+  } catch {
+    warning(config, timedOut ? `Request timed out after ${config.timeoutMs}ms` : "Request failed")
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export function sendEvent(config: PluginConfig, payload: EventPayload): void {
+  void postEvent(config, payload)
+}

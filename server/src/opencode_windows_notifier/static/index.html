@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Configure Windows Toast and sound routing for OpenCode events from WSL.">
+  <link rel="icon" href="data:,">
+  <title>OpenCode Windows Notifier</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f4f1ea;
+      --surface: #fffdf8;
+      --surface-strong: #ffffff;
+      --ink: #242622;
+      --muted: #6f726a;
+      --line: #d9d5ca;
+      --line-strong: #bdb8aa;
+      --accent: #b95d20;
+      --accent-dark: #7f3914;
+      --success: #2e7555;
+      --danger: #a44235;
+      --shadow: 0 22px 60px rgba(63, 50, 31, 0.11);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100dvh;
+      background:
+        linear-gradient(rgba(76, 67, 52, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(76, 67, 52, 0.035) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 28px 28px;
+      color: var(--ink);
+      font-family: Aptos, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button, select, input { font: inherit; }
+
+    button, select {
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--surface-strong);
+      color: var(--ink);
+    }
+
+    button {
+      cursor: pointer;
+      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { cursor: not-allowed; opacity: 0.48; }
+
+    button:focus-visible, select:focus-visible, input:focus-visible {
+      outline: 3px solid rgba(185, 93, 32, 0.24);
+      outline-offset: 2px;
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 56px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 30px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-dark);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.76rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 720px;
+      font-family: Bahnschrift, "Segoe UI Variable Display", sans-serif;
+      font-size: 4.8rem;
+      font-weight: 650;
+      letter-spacing: 0;
+      line-height: 0.95;
+    }
+
+    .lede {
+      max-width: 670px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.02rem;
+    }
+
+    .service-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      align-self: start;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.68);
+      color: var(--muted);
+      font-size: 0.86rem;
+      white-space: nowrap;
+    }
+
+    .service-state::before {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 4px rgba(46, 117, 85, 0.12);
+      content: "";
+    }
+
+    .panel {
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-left: 6px solid var(--accent);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.96);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: center;
+      padding: 22px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-head h2 { margin: 0; font-size: 1.08rem; }
+    .panel-head p { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    th:first-child, td:first-child { width: 38%; padding-left: 24px; }
+    th:nth-child(2), th:nth-child(3), td:nth-child(2), td:nth-child(3) { width: 10%; text-align: center; }
+    th:nth-child(4), td:nth-child(4) { width: 27%; }
+    th:last-child, td:last-child { width: 15%; padding-right: 24px; text-align: right; }
+
+    td {
+      padding: 17px 16px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr { transition: background 150ms ease; }
+    tbody tr:hover { background: rgba(185, 93, 32, 0.035); }
+
+    .event-name { display: block; font-weight: 650; }
+    .event-id { margin-left: 8px; color: var(--accent-dark); font-family: Consolas, monospace; font-size: 0.72rem; }
+    .event-description { display: block; margin-top: 4px; color: var(--muted); font-size: 0.84rem; }
+
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    select {
+      width: 100%;
+      min-height: 38px;
+      padding: 7px 34px 7px 10px;
+    }
+
+    .preview {
+      min-width: 72px;
+      padding: 8px 12px;
+      background: transparent;
+    }
+
+    .panel-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      min-height: 76px;
+      padding: 16px 24px;
+      border-top: 1px solid var(--line);
+      background: #f7f3ea;
+    }
+
+    #status {
+      min-height: 1.4em;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #status.success { color: var(--success); }
+    #status.error { color: var(--danger); }
+
+    .save {
+      min-width: 138px;
+      padding: 10px 18px;
+      border-color: var(--accent-dark);
+      background: var(--accent);
+      color: #fffaf1;
+      font-weight: 650;
+    }
+
+    .save:hover:not(:disabled) { border-color: var(--accent-dark); background: var(--accent-dark); }
+
+    .loading-row td { padding: 22px 24px; }
+    .skeleton {
+      height: 14px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #e9e4d9 25%, #f6f2e9 50%, #e9e4d9 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+
+    .retry { display: none; padding: 8px 12px; }
+    .retry.visible { display: inline-block; }
+
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 20px, 620px); padding-top: 24px; }
+      header { grid-template-columns: 1fr; }
+      h1 { font-size: 3.2rem; }
+      .panel-head, .panel-foot { align-items: flex-start; padding: 18px; }
+      .panel-foot { flex-direction: column; }
+      .save { width: 100%; }
+      .table-wrap { overflow: visible; }
+      table, tbody, tr, td { display: block; width: 100% !important; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      tbody { padding: 0 14px; }
+      tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; padding: 18px 4px; border-bottom: 1px solid var(--line); }
+      tbody tr:last-child { border-bottom: 0; }
+      td { padding: 0 !important; border: 0; text-align: left !important; }
+      td:first-child { grid-column: 1 / -1; }
+      td:nth-child(4) { grid-column: 1 / -1; }
+      td:last-child { align-self: end; }
+      td[data-label]::before { display: block; margin-bottom: 5px; color: var(--muted); font-family: Consolas, monospace; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; content: attr(data-label); }
+      .preview { width: 100%; }
+      .loading-row { display: block; }
+    }
+
+    @media (max-width: 430px) {
+      h1 { font-size: 2.55rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">Local Windows control plane</p>
+        <h1>Attention routing for OpenCode.</h1>
+        <p class="lede">Choose which WSL events deserve a Windows Toast, a recognizable sound, both, or no interruption.</p>
+      </div>
+      <div class="service-state">Receiver connected</div>
+    </header>
+
+    <section class="panel" aria-labelledby="routing-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="routing-title">Event presentation</h2>
+          <p>Changes apply to the next event after saving.</p>
+        </div>
+        <button id="retry" class="retry" type="button">Retry</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Event</th><th>Toast</th><th>Sound</th><th>Tone</th><th>Test</th></tr>
+          </thead>
+          <tbody id="events">
+            <tr class="loading-row"><td colspan="5"><div class="skeleton" aria-label="Loading configuration"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel-foot">
+        <p id="status" role="status" aria-live="polite">Loading local configuration…</p>
+        <button id="save" class="save" type="button" disabled>Save changes</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const eventOrder = ["permission", "question", "complete", "subagent_complete", "error", "cancelled"];
+    const rows = document.querySelector("#events");
+    const saveButton = document.querySelector("#save");
+    const retryButton = document.querySelector("#retry");
+    const statusLine = document.querySelector("#status");
+    let configuration = null;
+
+    function setStatus(message, kind = "") {
+      statusLine.textContent = message;
+      statusLine.className = kind;
+    }
+
+    function markDirty() {
+      saveButton.disabled = false;
+      setStatus("Unsaved changes");
+    }
+
+    function createCheckbox(checked, label) {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = checked;
+      checkbox.setAttribute("aria-label", label);
+      checkbox.addEventListener("change", markDirty);
+      return checkbox;
+    }
+
+    function createCell(label) {
+      const cell = document.createElement("td");
+      cell.dataset.label = label;
+      return cell;
+    }
+
+    function render() {
+      rows.replaceChildren();
+      for (const eventID of eventOrder) {
+        const event = configuration.events[eventID];
+        const row = document.createElement("tr");
+        row.dataset.event = eventID;
+
+        const identity = createCell("Event");
+        const name = document.createElement("span");
+        name.className = "event-name";
+        name.textContent = event.label;
+        const id = document.createElement("span");
+        id.className = "event-id";
+        id.textContent = eventID;
+        name.append(id);
+        const description = document.createElement("span");
+        description.className = "event-description";
+        description.textContent = event.description;
+        identity.append(name, description);
+
+        const toastCell = createCell("Toast");
+        const toast = createCheckbox(event.toast, `${event.label} Toast`);
+        toast.className = "toast-toggle";
+        toastCell.append(toast);
+
+        const soundCell = createCell("Sound");
+        const sound = createCheckbox(event.sound.enabled, `${event.label} sound enabled`);
+        sound.className = "sound-toggle";
+        soundCell.append(sound);
+
+        const toneCell = createCell("Tone");
+        const select = document.createElement("select");
+        select.className = "sound-source";
+        select.setAttribute("aria-label", `${event.label} sound source`);
+        for (const optionData of configuration.sounds) {
+          const option = document.createElement("option");
+          option.value = optionData.id;
+          option.textContent = optionData.label;
+          option.selected = optionData.id === event.sound.source;
+          select.append(option);
+        }
+        select.addEventListener("change", markDirty);
+        toneCell.append(select);
+
+        const previewCell = createCell("Test");
+        const preview = document.createElement("button");
+        preview.type = "button";
+        preview.className = "preview";
+        preview.textContent = "Play";
+        preview.addEventListener("click", () => previewSound(select.value, preview));
+        previewCell.append(preview);
+
+        row.append(identity, toastCell, soundCell, toneCell, previewCell);
+        rows.append(row);
+      }
+    }
+
+    function collectEvents() {
+      return Object.fromEntries(eventOrder.map((eventID) => {
+        const row = rows.querySelector(`[data-event="${eventID}"]`);
+        return [eventID, {
+          toast: row.querySelector(".toast-toggle").checked,
+          sound: {
+            enabled: row.querySelector(".sound-toggle").checked,
+            source: row.querySelector(".sound-source").value,
+          },
+        }];
+      }));
+    }
+
+    async function loadConfiguration() {
+      retryButton.classList.remove("visible");
+      setStatus("Loading local configuration…");
+      try {
+        const response = await fetch("/v1/config");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        configuration = await response.json();
+        render();
+        saveButton.disabled = true;
+        setStatus("Configuration loaded");
+      } catch (error) {
+        rows.replaceChildren();
+        retryButton.classList.add("visible");
+        setStatus(`Could not load configuration: ${error.message}`, "error");
+      }
+    }
+
+    async function previewSound(source, button) {
+      const previous = button.textContent;
+      button.disabled = true;
+      button.textContent = "Playing…";
+      try {
+        const response = await fetch("/v1/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        setStatus("Preview sent", "success");
+      } catch (error) {
+        setStatus(`Preview failed: ${error.message}`, "error");
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
+
+    async function saveConfiguration() {
+      saveButton.disabled = true;
+      saveButton.textContent = "Saving…";
+      setStatus("Saving configuration…");
+      try {
+        const response = await fetch("/v1/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ events: collectEvents() }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        configuration = await response.json();
+        render();
+        setStatus("Saved. The next event will use this routing.", "success");
+      } catch (error) {
+        saveButton.disabled = false;
+        setStatus(`Save failed: ${error.message}`, "error");
+      } finally {
+        saveButton.textContent = "Save changes";
+      }
+    }
+
+    retryButton.addEventListener("click", loadConfiguration);
+    saveButton.addEventListener("click", saveConfiguration);
+    loadConfiguration();
+  </script>
+</body>
+</html>

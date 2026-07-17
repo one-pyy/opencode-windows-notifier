@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opencode-windows-notifier"
+version = "0.1.0"
+description = "Windows notification receiver for OpenCode running in WSL"
+readme = { text = "Windows notification receiver for OpenCode running in WSL.", content-type = "text/markdown" }
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "fastapi>=0.116,<1",
+  "pydantic>=2.11,<3",
+  "uvicorn>=0.35,<1",
+  "win11toast>=0.36,<1; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8,<10",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+opencode_windows_notifier = ["static/*.html"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -5,13 +5,15 @@ Purpose: 记录本项目推进中可复用的设计决策、实现陷阱、问�
 
 ## Summary
 
-当前知识库为空。项目刚完成 docs 控制面初始化，尚未进入实现；访谈中确认的目标设计和执行约束维护在 `opencode-windows-notifier/.sisyphus/docs/`。后续只有通过复现、泛化和半衰期三门验证的经验才写入本知识库。
+当前知识库记录 Windows-only Python 通知依赖与 WSL/Linux 开发验证之间的长期边界。最新实现状态、接口和验收要求维护在 `opencode-windows-notifier/.sisyphus/docs/`；这里仅解释可复用的安装陷阱与判断方法。
 
 ---
 
 ## Decisions
 
 ## Issues
+
+[issues/2026-07-17_win11toast-linux-development-install.md] — Windows-only WinRT 依赖需使用平台标记，并通过动态导入与 mock 支持 WSL/Linux 开发测试 #windows #python #dependency #testing #trap
 
 ## Learnings
 

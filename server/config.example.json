@@ -1,0 +1,13 @@
+{
+  "listen_host": "0.0.0.0",
+  "listen_port": 8765,
+  "token": "replace-with-the-same-long-random-token",
+  "events": {
+    "permission": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemExclamation" } },
+    "question": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemQuestion" } },
+    "complete": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemAsterisk" } },
+    "subagent_complete": { "toast": false, "sound": { "enabled": false, "source": "alias:SystemAsterisk" } },
+    "error": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemHand" } },
+    "cancelled": { "toast": true, "sound": { "enabled": false, "source": "alias:SystemAsterisk" } }
+  }
+}

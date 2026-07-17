@@ -5,7 +5,7 @@ Purpose: 记录 OpenCode WSL 事件投递到 Windows Toast 与声音服务的最
 
 ## Summary
 
-本项目当前处于**未实现、设计已锁定**状态：公开 GitHub 仓库和 docs 控制面已经建立，尚无插件或 Windows 服务实现。首版只处理 `permission`、`question`、`complete`、`subagent_complete`、`error` 和 `cancelled` 六类需要用户注意的事件。
+本项目当前处于**半实现**状态：WSL TypeScript 插件、Windows FastAPI 服务、原生配置页、许可证和 README 均已实现。插件 22 项测试与类型检查通过，服务 23 项测试通过，真实 HTTP `200/204` 和 Playwright 桌面/移动交互验证通过；尚未在真实 Windows 上验证 Toast/WAV，也尚未接入真实 OpenCode WSL 会话完成六项手工联调。
 
 系统由 WSL TypeScript 插件和 Windows Python FastAPI 服务组成。插件判断 OpenCode 会话语义并把全部六类逻辑事件非阻塞发送到 Windows；Windows 通过本地单页配置决定每类事件是否 Toast、是否播放系统声音或项目 `sounds/` 中的 WAV。首版不做服务端事件去重、通知历史、远程配置或反向控制。
 
@@ -23,15 +23,15 @@ Purpose: 记录 OpenCode WSL 事件投递到 Windows Toast 与声音服务的最
 
 ## 需求与架构
 
-- [opencode-windows-notifier/.sisyphus/docs/architecture/system.md](architecture/system.md) — 未实现、已锁定：最小需求、非目标、两端职责和数据流。
+- [opencode-windows-notifier/.sisyphus/docs/architecture/system.md](architecture/system.md) — 半实现：代码与本地验证完成，待 Windows/WSL 实机验收。
 
 ## 模式与抽象
 
-- [opencode-windows-notifier/.sisyphus/docs/patterns/protocol-and-configuration.md](patterns/protocol-and-configuration.md) — 未实现、已锁定：六类事件、最小 HTTP 载荷、两端配置和三个管理 API。
-- [opencode-windows-notifier/.sisyphus/docs/patterns/testing.md](patterns/testing.md) — 未实现、已锁定：状态机、投递、鉴权、配置和声音的必要测试。
+- [opencode-windows-notifier/.sisyphus/docs/patterns/protocol-and-configuration.md](patterns/protocol-and-configuration.md) — 已实现：六类事件、最小 HTTP 载荷、两端配置和三个管理 API。
+- [opencode-windows-notifier/.sisyphus/docs/patterns/testing.md](patterns/testing.md) — 半实现：自动测试与浏览器验证完成，六项实机验收待执行。
 
 ## 实现参考
 
-- [opencode-windows-notifier/.sisyphus/docs/impl/plugin.md](impl/plugin.md) — 未实现、已锁定：四模块 WSL 插件、会话状态和 HTTP 投递。
-- [opencode-windows-notifier/.sisyphus/docs/impl/windows-server.md](impl/windows-server.md) — 未实现、已锁定：四模块 Windows 服务、通知后端和本地配置页。
-- [opencode-windows-notifier/.sisyphus/docs/impl/implementation-order.md](impl/implementation-order.md) — 未实现、已锁定：七步实现顺序、锁定项和验收标准。
+- [opencode-windows-notifier/.sisyphus/docs/impl/plugin.md](impl/plugin.md) — 半实现：插件代码与自动测试完成，待真实 OpenCode WSL 联调。
+- [opencode-windows-notifier/.sisyphus/docs/impl/windows-server.md](impl/windows-server.md) — 半实现：服务、配置页和 mock 验证完成，待 Windows Toast/WAV 实机验收。
+- [opencode-windows-notifier/.sisyphus/docs/impl/implementation-order.md](impl/implementation-order.md) — 半实现：步骤 1–6 完成，README 已完成，真实 Windows + WSL 联调待执行。

@@ -1,0 +1,9 @@
+plugin/node_modules/
+server/.venv/
+server/.pytest_cache/
+server/.ruff_cache/
+server/**/__pycache__/
+server/**/*.pyc
+server/src/*.egg-info/
+coverage/
+*.log

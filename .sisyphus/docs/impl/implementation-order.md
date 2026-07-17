@@ -1,4 +1,4 @@
-# 实现顺序与验收标准（未实现，已锁定）
+# 实现顺序与验收标准（半实现：本地实现完成，实机验收待执行）
 
 ## 实现原则
 
@@ -6,13 +6,13 @@
 
 ## 实现顺序
 
-1. 建立许可证、第三方来源说明、两端项目骨架、`sounds/` 和最小协议样例。 → verify: 目录与依赖边界符合 docs，协议样例可被两端测试读取。
-2. 实现插件 state 和六类事件映射。 → verify: `busy/retry → idle`、错误/取消抑制、父子会话、权限去重和 deprecated idle 忽略测试通过。
-3. 实现插件配置与 fire-and-forget sender。 → verify: URL/token/timeout 校验、204 成功、超时、连接失败、非 2xx、无重试和日志限频测试通过。
-4. 实现 Windows 配置、事件模型、Bearer 鉴权和 `/v1/events`。 → verify: FastAPI TestClient 覆盖 `204/401/422`，合法事件按当前映射调用 notifier。
-5. 实现 Toast、系统声音、项目 WAV catalog 和试听。 → verify: mock 测试覆盖双通道开关、alias、WAV、路径拒绝和部分失败隔离。
-6. 实现 loopback 配置 API 和原生单页前端。 → verify: 本机读取/保存/试听、远程 403、完整映射校验、原子保存和立即生效测试通过。
-7. 完成 README 和真实 Windows + WSL 联调。 → verify: 按测试文档的 6 项手工验证全部通过。
+1. **已完成**：建立许可证、第三方来源说明、两端项目骨架、`sounds/` 和最小协议样例。 → verify: 目录与依赖边界符合 docs，协议样例可被两端测试读取。
+2. **已完成**：实现插件 state 和六类事件映射。 → verify: `busy/retry → idle`、错误/取消抑制、父子会话、权限去重和 deprecated idle 忽略测试通过。
+3. **已完成**：实现插件配置与 fire-and-forget sender。 → verify: URL/token/timeout 校验、204 成功、超时、连接失败、非 2xx、无重试和日志限频测试通过。
+4. **已完成**：实现 Windows 配置、事件模型、Bearer 鉴权和 `/v1/events`。 → verify: FastAPI TestClient 覆盖 `204/401/422`，合法事件按当前映射调用 notifier。
+5. **已完成（mock）**：实现 Toast、系统声音、项目 WAV catalog 和试听。 → verify: mock 测试覆盖双通道开关、alias、WAV、路径拒绝和部分失败隔离。
+6. **已完成**：实现 loopback 配置 API 和原生单页前端。 → verify: 本机读取/保存/试听、远程 403、完整映射校验、原子保存、立即生效和 Playwright 验证通过。
+7. **半完成**：README 已完成；真实 Windows + WSL 联调待执行。 → verify: 按测试文档的 6 项手工验证全部通过。
 
 ## 锁定项
 
@@ -59,7 +59,7 @@
 - Python 单测通过。
 - 上游 MIT 归属完整。
 - README 手动步骤在真实 Windows + WSL 环境验证。
-- 验证完成前 docs 状态保持“未实现”。
+- 每个阶段验收后同步更新 docs 状态；真实 Windows + WSL 手工验收完成前，整体状态保持“半实现”。
 
 ## 首版不包含
 
