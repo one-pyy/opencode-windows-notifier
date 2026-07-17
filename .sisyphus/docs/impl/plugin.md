@@ -1,4 +1,4 @@
-# WSL OpenCode 插件实现参考（半实现：代码与自动测试完成，待真实联调）
+# WSL OpenCode 插件实现参考（已实现）
 
 ## 职责
 
@@ -109,7 +109,7 @@ function sendEvent(config: PluginConfig, payload: EventPayload): void
 - 固定 POST `/v1/events`，使用 JSON 和 Bearer token。
 - 不重试。
 - Promise 必须捕获全部 rejection。
-- 网络、超时和非 2xx 警告按目标地址 30 秒限频。
+- Windows 连接拒绝、超时和非 2xx 响应全部静默丢弃，不记录 warning，不影响 OpenCode。
 
 ## 插件入口
 

@@ -2,6 +2,7 @@
   "listen_host": "0.0.0.0",
   "listen_port": 8765,
   "token": "replace-with-the-same-long-random-token",
+  "favorites": [],
   "events": {
     "permission": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemExclamation" } },
     "question": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemQuestion" } },

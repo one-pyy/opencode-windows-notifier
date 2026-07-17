@@ -18,7 +18,13 @@ def valid_config() -> dict[str, object]:
         }
         for event in ("permission", "question", "complete", "subagent_complete", "error", "cancelled")
     }
-    return {"listen_host": "0.0.0.0", "listen_port": 8765, "token": "secret", "events": events}
+    return {
+        "listen_host": "0.0.0.0",
+        "listen_port": 8765,
+        "token": "secret",
+        "events": events,
+        "favorites": [],
+    }
 
 
 def test_default_config_path_uses_local_app_data() -> None:
@@ -35,6 +41,7 @@ def test_default_config_path_uses_local_app_data() -> None:
         lambda value: value.update(listen_port=0),
         lambda value: value["events"].pop("cancelled"),
         lambda value: value["events"]["complete"]["sound"].update(source="wav:../escape.wav"),
+        lambda value: value.update(favorites=["wav:one.wav", "wav:one.wav"]),
     ],
 )
 def test_server_config_is_strict(mutation) -> None:
@@ -129,4 +136,36 @@ def test_replace_events_rejects_unknown_sound_without_writing(tmp_path: Path) ->
     with pytest.raises(ValueError, match="unknown sound ID"):
         state.replace_events(config.events, {"alias:SystemHand"})
 
+    assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_replace_favorites_updates_file_and_memory(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config = ServerConfig.model_validate(valid_config())
+    config_path.write_text(config.model_dump_json(), encoding="utf-8")
+    state = ConfigState(config_path, config)
+
+    state.replace_favorites(
+        ["wav:two.wav", "wav:one.wav"],
+        {"wav:one.wav", "wav:two.wav"},
+    )
+
+    assert state.current().favorites == ("wav:two.wav", "wav:one.wav")
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["favorites"] == ["wav:two.wav", "wav:one.wav"]
+    assert saved["events"] == config.model_dump(mode="json")["events"]
+    assert saved["token"] == "secret"
+
+
+def test_replace_favorites_rejects_unknown_sound_without_writing(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config = ServerConfig.model_validate(valid_config())
+    original = config.model_dump_json()
+    config_path.write_text(original, encoding="utf-8")
+    state = ConfigState(config_path, config)
+
+    with pytest.raises(ValueError, match="unknown sound ID"):
+        state.replace_favorites(["wav:missing.wav"], {"wav:one.wav"})
+
+    assert state.current() == config
     assert config_path.read_text(encoding="utf-8") == original

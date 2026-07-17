@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Configure Windows Toast and sound routing for OpenCode events from WSL.">
+  <meta name="description" content="配置 WSL 中 OpenCode 事件的 Windows 通知与声音。">
   <link rel="icon" href="data:,">
-  <title>OpenCode Windows Notifier</title>
+  <title>OpenCode Windows 通知</title>
   <style>
     :root {
       color-scheme: light;
@@ -116,6 +116,23 @@
       white-space: nowrap;
     }
 
+    .header-actions {
+      display: grid;
+      justify-items: end;
+      gap: 10px;
+      align-self: start;
+    }
+
+    .audition-link {
+      color: var(--accent-dark);
+      font-weight: 650;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 4px;
+    }
+
+    .audition-link:hover { color: var(--accent); }
+    .audition-link:focus-visible { outline: 3px solid rgba(185, 93, 32, 0.24); outline-offset: 3px; }
+
     .service-state::before {
       width: 8px;
       height: 8px;
@@ -197,6 +214,8 @@
       min-height: 38px;
       padding: 7px 34px 7px 10px;
     }
+
+    .sound-picker { display: grid; gap: 7px; }
 
     .preview {
       min-width: 72px;
@@ -285,36 +304,39 @@
   <main class="shell">
     <header>
       <div>
-        <p class="eyebrow">Local Windows control plane</p>
-        <h1>Attention routing for OpenCode.</h1>
-        <p class="lede">Choose which WSL events deserve a Windows Toast, a recognizable sound, both, or no interruption.</p>
+        <p class="eyebrow">Windows 本地控制台</p>
+        <h1>管理 OpenCode 的 Windows 提醒。</h1>
+        <p class="lede">为 WSL 中的 OpenCode 事件选择 Windows 通知、提示音、两者同时或静默处理。</p>
       </div>
-      <div class="service-state">Receiver connected</div>
+      <div class="header-actions">
+        <a class="audition-link" href="/audition">打开音效试听页 →</a>
+        <div class="service-state">接收服务已连接</div>
+      </div>
     </header>
 
     <section class="panel" aria-labelledby="routing-title">
       <div class="panel-head">
         <div>
-          <h2 id="routing-title">Event presentation</h2>
-          <p>Changes apply to the next event after saving.</p>
+          <h2 id="routing-title">事件呈现方式</h2>
+          <p>保存后，下一次事件将立即使用新设置。</p>
         </div>
-        <button id="retry" class="retry" type="button">Retry</button>
+        <button id="retry" class="retry" type="button">重试</button>
       </div>
 
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Event</th><th>Toast</th><th>Sound</th><th>Tone</th><th>Test</th></tr>
+            <tr><th>事件</th><th>通知</th><th>声音</th><th>提示音</th><th>试听</th></tr>
           </thead>
           <tbody id="events">
-            <tr class="loading-row"><td colspan="5"><div class="skeleton" aria-label="Loading configuration"></div></td></tr>
+            <tr class="loading-row"><td colspan="5"><div class="skeleton" aria-label="正在加载配置"></div></td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="panel-foot">
-        <p id="status" role="status" aria-live="polite">Loading local configuration…</p>
-        <button id="save" class="save" type="button" disabled>Save changes</button>
+        <p id="status" role="status" aria-live="polite">正在加载本地配置…</p>
+        <button id="save" class="save" type="button" disabled>保存设置</button>
       </div>
     </section>
   </main>
@@ -325,6 +347,10 @@
     const saveButton = document.querySelector("#save");
     const retryButton = document.querySelector("#retry");
     const statusLine = document.querySelector("#status");
+    const favoriteGroup = "收藏";
+    const favoriteChannel = typeof BroadcastChannel === "function"
+      ? new BroadcastChannel("opencode-sound-favorites")
+      : null;
     let configuration = null;
 
     function setStatus(message, kind = "") {
@@ -334,7 +360,7 @@
 
     function markDirty() {
       saveButton.disabled = false;
-      setStatus("Unsaved changes");
+      setStatus("有未保存的更改");
     }
 
     function createCheckbox(checked, label) {
@@ -352,6 +378,58 @@
       return cell;
     }
 
+    function soundGroups() {
+      const groups = new Map([[favoriteGroup, []]]);
+      const soundsByID = new Map(configuration.sounds.map((sound) => [sound.id, sound]));
+      for (const soundID of configuration.favorites || []) {
+        const sound = soundsByID.get(soundID);
+        if (!sound) continue;
+        groups.get(favoriteGroup).push({
+          ...sound,
+          group: favoriteGroup,
+          label: `${sound.group} - ${sound.label}`,
+        });
+      }
+      for (const sound of configuration.sounds) {
+        if (!groups.has(sound.group)) groups.set(sound.group, []);
+        groups.get(sound.group).push(sound);
+      }
+      return groups;
+    }
+
+    function appendSeriesOptions(select, selectedGroup) {
+      select.replaceChildren();
+      for (const [groupLabel, sounds] of soundGroups()) {
+        const option = document.createElement("option");
+        option.value = groupLabel;
+        option.textContent = groupLabel;
+        option.selected = groupLabel === selectedGroup;
+        option.disabled = groupLabel === favoriteGroup && sounds.length === 0;
+        select.append(option);
+      }
+    }
+
+    function appendSoundOptions(select, groupLabel, selectedSource) {
+      select.replaceChildren();
+      const sounds = soundGroups().get(groupLabel) || [];
+      select.disabled = sounds.length === 0;
+      if (sounds.length === 0) {
+        const option = document.createElement("option");
+        option.textContent = "暂无收藏";
+        option.disabled = true;
+        option.selected = true;
+        select.append(option);
+        return;
+      }
+      for (const sound of sounds) {
+        const option = document.createElement("option");
+        option.value = sound.id;
+        option.textContent = sound.label;
+        option.selected = sound.id === selectedSource;
+        select.append(option);
+      }
+    }
+
     function render() {
       rows.replaceChildren();
       for (const eventID of eventOrder) {
@@ -359,7 +437,7 @@
         const row = document.createElement("tr");
         row.dataset.event = eventID;
 
-        const identity = createCell("Event");
+        const identity = createCell("事件");
         const name = document.createElement("span");
         name.className = "event-name";
         name.textContent = event.label;
@@ -372,36 +450,45 @@
         description.textContent = event.description;
         identity.append(name, description);
 
-        const toastCell = createCell("Toast");
-        const toast = createCheckbox(event.toast, `${event.label} Toast`);
+        const toastCell = createCell("通知");
+        const toast = createCheckbox(event.toast, `${event.label} Windows 通知`);
         toast.className = "toast-toggle";
         toastCell.append(toast);
 
-        const soundCell = createCell("Sound");
-        const sound = createCheckbox(event.sound.enabled, `${event.label} sound enabled`);
+        const soundCell = createCell("声音");
+        const sound = createCheckbox(event.sound.enabled, `${event.label} 启用声音`);
         sound.className = "sound-toggle";
         soundCell.append(sound);
 
-        const toneCell = createCell("Tone");
-        const select = document.createElement("select");
-        select.className = "sound-source";
-        select.setAttribute("aria-label", `${event.label} sound source`);
-        for (const optionData of configuration.sounds) {
-          const option = document.createElement("option");
-          option.value = optionData.id;
-          option.textContent = optionData.label;
-          option.selected = optionData.id === event.sound.source;
-          select.append(option);
-        }
-        select.addEventListener("change", markDirty);
-        toneCell.append(select);
+        const toneCell = createCell("提示音");
+        const selectedSound = configuration.sounds.find((item) => item.id === event.sound.source)
+          || configuration.sounds[0];
+        const picker = document.createElement("div");
+        picker.className = "sound-picker";
+        const seriesSelect = document.createElement("select");
+        seriesSelect.className = "sound-series";
+        seriesSelect.setAttribute("aria-label", `${event.label} 声音系列`);
+        appendSeriesOptions(seriesSelect, selectedSound.group);
+        const sourceSelect = document.createElement("select");
+        sourceSelect.className = "sound-source";
+        sourceSelect.setAttribute("aria-label", `${event.label} 具体音效`);
+        appendSoundOptions(sourceSelect, selectedSound.group, selectedSound.id);
+        seriesSelect.addEventListener("change", () => {
+          appendSoundOptions(sourceSelect, seriesSelect.value, null);
+          preview.disabled = sourceSelect.disabled;
+          markDirty();
+        });
+        sourceSelect.addEventListener("change", markDirty);
+        picker.append(seriesSelect, sourceSelect);
+        toneCell.append(picker);
 
-        const previewCell = createCell("Test");
+        const previewCell = createCell("试听");
         const preview = document.createElement("button");
         preview.type = "button";
         preview.className = "preview";
-        preview.textContent = "Play";
-        preview.addEventListener("click", () => previewSound(select.value, preview));
+        preview.textContent = "试听";
+        preview.disabled = sourceSelect.disabled;
+        preview.addEventListener("click", () => previewSound(sourceSelect.value, preview));
         previewCell.append(preview);
 
         row.append(identity, toastCell, soundCell, toneCell, previewCell);
@@ -424,35 +511,61 @@
 
     async function loadConfiguration() {
       retryButton.classList.remove("visible");
-      setStatus("Loading local configuration…");
+      setStatus("正在加载本地配置…");
       try {
         const response = await fetch("/v1/config");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         configuration = await response.json();
         render();
         saveButton.disabled = true;
-        setStatus("Configuration loaded");
+        setStatus("配置已加载");
       } catch (error) {
         rows.replaceChildren();
         retryButton.classList.add("visible");
-        setStatus(`Could not load configuration: ${error.message}`, "error");
+        setStatus(`无法加载配置：${error.message}`, "error");
+      }
+    }
+
+    function synchronizeFavorites(favorites) {
+      if (!configuration) return;
+      configuration.favorites = favorites;
+      const groups = soundGroups();
+      for (const row of rows.querySelectorAll("tr[data-event]")) {
+        const seriesSelect = row.querySelector(".sound-series");
+        const sourceSelect = row.querySelector(".sound-source");
+        const preview = row.querySelector(".preview");
+        const currentSource = sourceSelect.value;
+        const original = configuration.sounds.find((sound) => sound.id === currentSource);
+        let selectedGroup = seriesSelect.value;
+        if (
+          selectedGroup === favoriteGroup
+          && !(groups.get(favoriteGroup) || []).some((sound) => sound.id === currentSource)
+        ) {
+          selectedGroup = original?.group || [...groups.keys()].find((group) => group !== favoriteGroup);
+        }
+        appendSeriesOptions(seriesSelect, selectedGroup);
+        appendSoundOptions(sourceSelect, selectedGroup, currentSource);
+        preview.disabled = sourceSelect.disabled;
       }
     }
 
     async function previewSound(source, button) {
       const previous = button.textContent;
       button.disabled = true;
-      button.textContent = "Playing…";
+      button.textContent = "播放中…";
       try {
         const response = await fetch("/v1/preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source }),
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        setStatus("Preview sent", "success");
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+        setStatus("试听完成", "success");
       } catch (error) {
-        setStatus(`Preview failed: ${error.message}`, "error");
+        setStatus(`试听失败：${error.message}`, "error");
       } finally {
         button.disabled = false;
         button.textContent = previous;
@@ -461,8 +574,8 @@
 
     async function saveConfiguration() {
       saveButton.disabled = true;
-      saveButton.textContent = "Saving…";
-      setStatus("Saving configuration…");
+      saveButton.textContent = "保存中…";
+      setStatus("正在保存设置…");
       try {
         const response = await fetch("/v1/config", {
           method: "PUT",
@@ -472,17 +585,20 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         configuration = await response.json();
         render();
-        setStatus("Saved. The next event will use this routing.", "success");
+        setStatus("已保存，下一次事件将使用新设置。", "success");
       } catch (error) {
         saveButton.disabled = false;
-        setStatus(`Save failed: ${error.message}`, "error");
+        setStatus(`保存失败：${error.message}`, "error");
       } finally {
-        saveButton.textContent = "Save changes";
+        saveButton.textContent = "保存设置";
       }
     }
 
     retryButton.addEventListener("click", loadConfiguration);
     saveButton.addEventListener("click", saveConfiguration);
+    if (favoriteChannel) {
+      favoriteChannel.addEventListener("message", (event) => synchronizeFavorites(event.data));
+    }
     loadConfiguration();
   </script>
 </body>

@@ -1,11 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import type { PluginConfig } from "../src/config"
 import { createEventHooks } from "../src/index"
 import {
   buildEventPayload,
-  resetSenderWarnings,
   sendEvent,
   type EventPayload,
 } from "../src/sender"
@@ -24,16 +23,11 @@ const payload: EventPayload = buildEventPayload(
 
 const originalFetch = globalThis.fetch
 const originalWarn = console.warn
-
 function installFetch(
   implementation: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ): void {
   globalThis.fetch = implementation as unknown as typeof fetch
 }
-
-beforeEach(() => {
-  resetSenderWarnings()
-})
 
 afterEach(() => {
   globalThis.fetch = originalFetch
@@ -72,7 +66,7 @@ describe("HTTP sender", () => {
     expect(JSON.parse(String(requests[0]?.init?.body))).toEqual(payload)
   })
 
-  test("timeout aborts once without retrying", async () => {
+  test("timeout aborts once without retrying or warning", async () => {
     let calls = 0
     installFetch(mock((_input, init) => {
       calls += 1
@@ -80,15 +74,16 @@ describe("HTTP sender", () => {
         init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
       })
     }))
-    console.warn = mock((_message: string) => undefined)
+    const warn = mock((_message: string) => undefined)
+    console.warn = warn
 
     sendEvent({ ...config, timeoutMs: 10 }, payload)
     await settle()
     expect(calls).toBe(1)
-    expect(console.warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledTimes(0)
   })
 
-  test("connection failures and non-2xx responses do not retry", async () => {
+  test("connection failures and non-2xx responses stay silent without retrying", async () => {
     const warn = mock((_message: string) => undefined)
     console.warn = warn
     let calls = 0
@@ -107,8 +102,7 @@ describe("HTTP sender", () => {
     await settle()
 
     expect(calls).toBe(2)
-    expect(warn).toHaveBeenCalledTimes(1)
-    expect(String(warn.mock.calls[0]?.[0])).not.toContain(config.token)
+    expect(warn).toHaveBeenCalledTimes(0)
   })
 
   test("hook completion does not wait for the HTTP request", async () => {

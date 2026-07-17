@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="按系列连续试听并收藏 OpenCode Windows Notifier 音效。">
+  <link rel="icon" href="data:,">
+  <title>音效试听 · OpenCode Windows 通知</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f4f1ea;
+      --surface: #fffdf8;
+      --ink: #242622;
+      --muted: #6f726a;
+      --line: #d9d5ca;
+      --line-strong: #bdb8aa;
+      --accent: #b95d20;
+      --accent-dark: #7f3914;
+      --success: #2e7555;
+      --danger: #a44235;
+      --shadow: 0 24px 64px rgba(63, 50, 31, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 760px;
+      min-height: 100dvh;
+      background:
+        linear-gradient(rgba(76, 67, 52, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(76, 67, 52, 0.035) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 28px 28px;
+      color: var(--ink);
+      font-family: Aptos, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button, select { font: inherit; }
+
+    button, select {
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    button {
+      cursor: pointer;
+      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { cursor: not-allowed; opacity: 0.46; }
+    button:focus-visible, select:focus-visible, a:focus-visible {
+      outline: 3px solid rgba(185, 93, 32, 0.24);
+      outline-offset: 3px;
+    }
+
+    .shell {
+      width: min(1040px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 42px 0 56px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 32px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-dark);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.76rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: Bahnschrift, "Segoe UI Variable Display", sans-serif;
+      font-size: 4.5rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      line-height: 0.95;
+    }
+
+    .lede { max-width: 650px; margin: 16px 0 0; color: var(--muted); }
+    .back { color: var(--accent-dark); font-weight: 650; text-underline-offset: 4px; white-space: nowrap; }
+
+    .desk {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.5fr);
+      min-height: 470px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-left: 6px solid var(--accent);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.97);
+      box-shadow: var(--shadow);
+    }
+
+    .library {
+      padding: 30px;
+      border-right: 1px solid var(--line);
+      background: #f7f3ea;
+    }
+
+    .library label, .counter-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    select { width: 100%; min-height: 42px; padding: 8px 34px 8px 11px; }
+
+    .library-note {
+      margin: 22px 0 0;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.87rem;
+    }
+
+    .player {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      padding: 46px 56px;
+      text-align: center;
+    }
+
+    .counter { margin: 0 0 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .sound-title {
+      min-height: 2.5em;
+      margin: 0;
+      font-family: Bahnschrift, "Segoe UI Variable Display", sans-serif;
+      font-size: 1.75rem;
+      font-weight: 620;
+      line-height: 1.25;
+    }
+
+    .favorite {
+      width: 48px;
+      height: 48px;
+      margin: 24px 0 28px;
+      border-radius: 50%;
+      color: var(--accent-dark);
+      font-size: 1.55rem;
+      line-height: 1;
+    }
+
+    .favorite[aria-pressed="true"] { border-color: var(--accent); background: #fff2df; color: var(--accent); }
+
+    .transport {
+      display: grid;
+      grid-template-columns: 118px 150px 118px;
+      gap: 12px;
+    }
+
+    .transport button { min-height: 48px; padding: 10px 16px; font-weight: 650; }
+    .pause { border-color: var(--accent-dark); background: var(--accent); color: #fffaf1; }
+    .pause:hover:not(:disabled) { border-color: var(--accent-dark); background: var(--accent-dark); }
+
+    .sequence {
+      min-width: 260px;
+      margin-top: 18px;
+      padding: 11px 20px;
+      background: transparent;
+      font-weight: 650;
+    }
+
+    .sequence.active { border-color: var(--danger); color: var(--danger); }
+
+    #status {
+      min-height: 1.5em;
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #status.success { color: var(--success); }
+    #status.error { color: var(--danger); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">Windows 本地音效库</p>
+        <h1>音效试听</h1>
+        <p class="lede">按系列逐个比较提示音，收藏合适的声音，再回到事件配置中直接选用。</p>
+      </div>
+      <a class="back" href="/">← 返回通知配置</a>
+    </header>
+
+    <section class="desk" aria-label="音效试听控制台">
+      <aside class="library">
+        <label for="series">音效系列</label>
+        <select id="series" aria-label="音效系列"></select>
+        <p class="library-note">WAV 支持断点暂停和继续。Windows 系统音效暂停后，继续时会从头播放。</p>
+      </aside>
+
+      <div class="player">
+        <p class="counter"><span class="counter-label">系列进度</span><span id="position">— / —</span></p>
+        <h2 id="sound-title" class="sound-title">正在加载音效库…</h2>
+        <button id="favorite" class="favorite" type="button" aria-label="收藏当前音效" aria-pressed="false">☆</button>
+
+        <div class="transport" aria-label="播放控制">
+          <button id="previous" type="button">← 上一个</button>
+          <button id="pause" class="pause" type="button">播放</button>
+          <button id="next" type="button">下一个 →</button>
+        </div>
+        <button id="sequence" class="sequence" type="button">从当前逐一播放</button>
+        <p id="status" role="status" aria-live="polite">正在加载本地配置…</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const favoriteGroup = "收藏";
+    const sequenceGapMs = 500;
+    const seriesSelect = document.querySelector("#series");
+    const soundTitle = document.querySelector("#sound-title");
+    const position = document.querySelector("#position");
+    const favoriteButton = document.querySelector("#favorite");
+    const previousButton = document.querySelector("#previous");
+    const pauseButton = document.querySelector("#pause");
+    const nextButton = document.querySelector("#next");
+    const sequenceButton = document.querySelector("#sequence");
+    const statusLine = document.querySelector("#status");
+    const favoriteChannel = typeof BroadcastChannel === "function"
+      ? new BroadcastChannel("opencode-sound-favorites")
+      : null;
+
+    let configuration = null;
+    let groups = new Map();
+    let selectedGroup = "";
+    let currentIndex = 0;
+    let audio = null;
+    let aliasActive = false;
+    let playing = false;
+    let paused = false;
+    let sequenceActive = false;
+    let generation = 0;
+    let gapTimer = null;
+
+    function setStatus(message, kind = "") {
+      statusLine.textContent = message;
+      statusLine.className = kind;
+    }
+
+    function rebuildGroups() {
+      const nextGroups = new Map([[favoriteGroup, []]]);
+      const soundsByID = new Map(configuration.sounds.map((sound) => [sound.id, sound]));
+      for (const soundID of configuration.favorites || []) {
+        const sound = soundsByID.get(soundID);
+        if (!sound) continue;
+        nextGroups.get(favoriteGroup).push({
+          ...sound,
+          label: `${sound.group} - ${sound.label}`,
+          originalGroup: sound.group,
+        });
+      }
+      for (const sound of configuration.sounds) {
+        if (!nextGroups.has(sound.group)) nextGroups.set(sound.group, []);
+        nextGroups.get(sound.group).push(sound);
+      }
+      groups = nextGroups;
+    }
+
+    function currentSounds() {
+      return groups.get(selectedGroup) || [];
+    }
+
+    function currentSound() {
+      return currentSounds()[currentIndex] || null;
+    }
+
+    function originalSound(soundID) {
+      return configuration.sounds.find((sound) => sound.id === soundID) || null;
+    }
+
+    function renderSeries() {
+      seriesSelect.replaceChildren();
+      for (const [group, sounds] of groups) {
+        const option = document.createElement("option");
+        option.value = group;
+        option.textContent = group;
+        option.disabled = sounds.length === 0;
+        option.selected = group === selectedGroup;
+        seriesSelect.append(option);
+      }
+    }
+
+    function renderCurrent() {
+      const sounds = currentSounds();
+      const sound = currentSound();
+      if (!sound) {
+        soundTitle.textContent = "当前系列没有可试听音效";
+        position.textContent = "0 / 0";
+        favoriteButton.disabled = true;
+        previousButton.disabled = true;
+        pauseButton.disabled = true;
+        nextButton.disabled = true;
+        sequenceButton.disabled = true;
+        return;
+      }
+
+      const original = originalSound(sound.id) || sound;
+      soundTitle.textContent = `${original.group} - ${original.label}`;
+      position.textContent = `${currentIndex + 1} / ${sounds.length}`;
+      const isFavorite = (configuration.favorites || []).includes(sound.id);
+      favoriteButton.disabled = false;
+      favoriteButton.textContent = isFavorite ? "★" : "☆";
+      favoriteButton.setAttribute("aria-pressed", String(isFavorite));
+      favoriteButton.setAttribute("aria-label", isFavorite ? "取消收藏当前音效" : "收藏当前音效");
+      previousButton.disabled = currentIndex === 0;
+      nextButton.disabled = currentIndex >= sounds.length - 1;
+      pauseButton.disabled = false;
+      pauseButton.textContent = paused ? "继续" : playing ? "暂停" : "播放";
+      sequenceButton.disabled = false;
+      sequenceButton.textContent = sequenceActive ? "停止逐一播放" : "从当前逐一播放";
+      sequenceButton.classList.toggle("active", sequenceActive);
+    }
+
+    async function stopCurrent({ resetPause = true } = {}) {
+      generation += 1;
+      if (gapTimer) clearTimeout(gapTimer);
+      gapTimer = null;
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+        audio = null;
+      }
+      if (aliasActive) {
+        await fetch("/v1/preview/stop", { method: "POST" }).catch(() => null);
+        aliasActive = false;
+      }
+      playing = false;
+      if (resetPause) paused = false;
+      renderCurrent();
+    }
+
+    async function finishPlayback(token) {
+      if (token !== generation) return;
+      playing = false;
+      audio = null;
+      aliasActive = false;
+      if (!sequenceActive || paused) {
+        setStatus("播放完成", "success");
+        renderCurrent();
+        return;
+      }
+
+      if (currentIndex >= currentSounds().length - 1) {
+        sequenceActive = false;
+        setStatus("当前系列已全部播放完成", "success");
+        renderCurrent();
+        return;
+      }
+
+      setStatus("等待 0.5 秒后播放下一个…");
+      gapTimer = setTimeout(() => {
+        if (token !== generation || !sequenceActive || paused) return;
+        currentIndex += 1;
+        renderCurrent();
+        playCurrent();
+      }, sequenceGapMs);
+    }
+
+    async function playCurrent() {
+      const sound = currentSound();
+      if (!sound) return;
+      generation += 1;
+      const token = generation;
+      paused = false;
+      playing = true;
+      setStatus(`正在播放：${soundTitle.textContent}`);
+      renderCurrent();
+
+      try {
+        if (sound.id.startsWith("wav:")) {
+          audio = new Audio(`/v1/audio?source=${encodeURIComponent(sound.id)}`);
+          audio.addEventListener("ended", () => finishPlayback(token), { once: true });
+          audio.addEventListener("error", () => {
+            if (token !== generation) return;
+            playing = false;
+            sequenceActive = false;
+            setStatus("播放失败：无法读取 WAV 文件", "error");
+            renderCurrent();
+          }, { once: true });
+          await audio.play();
+          return;
+        }
+
+        aliasActive = true;
+        const response = await fetch("/v1/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: sound.id }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+        await finishPlayback(token);
+      } catch (error) {
+        if (token !== generation) return;
+        playing = false;
+        aliasActive = false;
+        sequenceActive = false;
+        setStatus(`播放失败：${error.message}`, "error");
+        renderCurrent();
+      }
+    }
+
+    async function togglePause() {
+      if (!playing && !paused) {
+        sequenceActive = false;
+        await playCurrent();
+        return;
+      }
+
+      if (paused) {
+        paused = false;
+        if (audio) {
+          playing = true;
+          await audio.play();
+          setStatus(`继续播放：${soundTitle.textContent}`);
+          renderCurrent();
+          return;
+        }
+        await playCurrent();
+        return;
+      }
+
+      paused = true;
+      playing = false;
+      if (audio) {
+        audio.pause();
+      } else if (aliasActive) {
+        generation += 1;
+        await fetch("/v1/preview/stop", { method: "POST" }).catch(() => null);
+        aliasActive = false;
+        setStatus("已暂停；Windows 系统音效继续时将从头播放。");
+      }
+      if (audio) setStatus("已暂停");
+      renderCurrent();
+    }
+
+    async function move(offset) {
+      sequenceActive = false;
+      await stopCurrent();
+      currentIndex = Math.max(0, Math.min(currentSounds().length - 1, currentIndex + offset));
+      renderCurrent();
+      await playCurrent();
+    }
+
+    async function toggleSequence() {
+      if (sequenceActive) {
+        sequenceActive = false;
+        await stopCurrent();
+        setStatus("已停止逐一播放");
+        return;
+      }
+      await stopCurrent();
+      sequenceActive = true;
+      renderCurrent();
+      await playCurrent();
+    }
+
+    async function toggleFavorite() {
+      const sound = currentSound();
+      if (!sound) return;
+      favoriteButton.disabled = true;
+      const currentFavorites = configuration.favorites || [];
+      const nextFavorites = currentFavorites.includes(sound.id)
+        ? currentFavorites.filter((soundID) => soundID !== sound.id)
+        : [...currentFavorites, sound.id];
+
+      try {
+        const response = await fetch("/v1/favorites", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ favorites: nextFavorites }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const currentSoundID = sound.id;
+        configuration.favorites = (await response.json()).favorites;
+        rebuildGroups();
+        if (selectedGroup === favoriteGroup) {
+          const favoriteIndex = currentSounds().findIndex((item) => item.id === currentSoundID);
+          if (favoriteIndex >= 0) {
+            currentIndex = favoriteIndex;
+          } else {
+            const original = originalSound(currentSoundID);
+            selectedGroup = original?.group || [...groups.keys()].find((group) => groups.get(group).length);
+            currentIndex = Math.max(0, (groups.get(selectedGroup) || []).findIndex((item) => item.id === currentSoundID));
+          }
+        }
+        renderSeries();
+        favoriteChannel?.postMessage(configuration.favorites);
+        setStatus(nextFavorites.includes(currentSoundID) ? "已收藏" : "已取消收藏", "success");
+        renderCurrent();
+      } catch (error) {
+        setStatus(`收藏保存失败：${error.message}`, "error");
+        renderCurrent();
+      }
+    }
+
+    function synchronizeFavorites(favorites) {
+      if (!configuration) return;
+      const currentSoundID = currentSound()?.id;
+      configuration.favorites = favorites;
+      rebuildGroups();
+      if (selectedGroup === favoriteGroup) {
+        const nextIndex = currentSounds().findIndex((sound) => sound.id === currentSoundID);
+        if (nextIndex >= 0) {
+          currentIndex = nextIndex;
+        } else {
+          const original = originalSound(currentSoundID);
+          selectedGroup = original?.group
+            || [...groups.keys()].find((group) => group !== favoriteGroup && groups.get(group).length);
+          currentIndex = Math.max(
+            0,
+            (groups.get(selectedGroup) || []).findIndex((sound) => sound.id === currentSoundID),
+          );
+        }
+      }
+      renderSeries();
+      renderCurrent();
+    }
+
+    async function loadConfiguration() {
+      setStatus("正在加载本地配置…");
+      try {
+        const response = await fetch("/v1/config");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        configuration = await response.json();
+        rebuildGroups();
+        selectedGroup = (groups.get(favoriteGroup) || []).length
+          ? favoriteGroup
+          : [...groups.keys()].find((group) => group !== favoriteGroup && groups.get(group).length);
+        currentIndex = 0;
+        renderSeries();
+        renderCurrent();
+        setStatus("音效库已加载");
+      } catch (error) {
+        setStatus(`无法加载音效库：${error.message}`, "error");
+      }
+    }
+
+    seriesSelect.addEventListener("change", async () => {
+      sequenceActive = false;
+      await stopCurrent();
+      selectedGroup = seriesSelect.value;
+      currentIndex = 0;
+      renderCurrent();
+      setStatus("已切换系列");
+    });
+    previousButton.addEventListener("click", () => move(-1));
+    pauseButton.addEventListener("click", togglePause);
+    nextButton.addEventListener("click", () => move(1));
+    sequenceButton.addEventListener("click", toggleSequence);
+    favoriteButton.addEventListener("click", toggleFavorite);
+    favoriteChannel?.addEventListener("message", (event) => synchronizeFavorites(event.data));
+    loadConfiguration();
+  </script>
+</body>
+</html>

@@ -21,7 +21,9 @@ opencode-windows-notifier/
 │   │   ├── app.py
 │   │   ├── config.py
 │   │   ├── notifier.py
-│   │   └── static/index.html
+│   │   └── static/
+│   │       ├── index.html
+│   │       └── audition.html
 │   ├── tests/
 │   ├── config.example.json
 │   └── pyproject.toml
@@ -135,6 +137,7 @@ Content-Type: application/json
   "listen_host": "0.0.0.0",
   "listen_port": 8765,
   "token": "replace-with-the-same-long-random-token",
+  "favorites": [],
   "events": {
     "permission": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemExclamation" } },
     "question": { "toast": true, "sound": { "enabled": true, "source": "alias:SystemQuestion" } },
@@ -153,22 +156,28 @@ Content-Type: application/json
 
 `sound.enabled` 与 source 分开保存，使取消勾选后仍保留上次选择。
 
-服务启动时验证端口、非空令牌、完整六事件映射和声音 source。`wav:` 只允许单个文件名，不允许路径分隔符、绝对路径或 `..`。无效配置使服务以非零状态退出。
+服务启动时验证端口、非空令牌、完整六事件映射、声音 source，以及有序且不重复的收藏声音 ID。`wav:` 只允许单个文件名，不允许路径分隔符、绝对路径或 `..`。旧配置缺失 `favorites` 时使用空列表；无效配置使服务以非零状态退出。
 
 ## 本地配置页与 API
 
-FastAPI 直接提供一个原生 HTML/CSS/JavaScript 页面。每个事件显示事件名、说明、Toast checkbox、Sound checkbox、声音 select 和试听按钮。
+FastAPI 直接提供两个原生 HTML/CSS/JavaScript 页面。配置页的每个事件显示事件名、说明、Toast checkbox、Sound checkbox、系列 select、声音 select 和试听按钮。第一级只显示系列名；切换系列后，第二级只显示该系列的声音。置顶“收藏”系列中的标签使用 `原系列 - 音效名`。
+
+试听页按系列维护一个当前音效，提供收藏、上一个、暂停/继续、下一个和从当前位置连续播放。连续播放在一个声音结束后等待 0.5 秒。WAV 由浏览器通过受控 loopback 文件端点播放；Windows alias 仍由 `winsound` 播放，暂停后继续会从头开始。
 
 页面只管理六类事件的呈现映射，不修改监听地址、端口、令牌或 WSL 配置。
 
 ### Routes
 
 - `GET /`：返回配置页面。
+- `GET /audition`：返回音效试听页面。
 - `GET /v1/config`：返回六类事件说明、当前映射和声音列表。
 - `PUT /v1/config`：验证完整六事件映射，原子写入配置并立即应用。
-- `POST /v1/preview`：播放一个已枚举声音，不修改配置、不显示 Toast。
+- `PUT /v1/favorites`：验证并原子保存有序收藏声音 ID，不覆盖事件映射。
+- `GET /v1/audio?source=<wav-id>`：只返回当前 catalog 中的直接 WAV 文件。
+- `POST /v1/preview`：播放一个已枚举声音，不修改配置、不显示 Toast；播放失败返回带可读原因的 `422`。
+- `POST /v1/preview/stop`：停止当前 Windows 系统音效。
 
-`GET /` 和三个配置能力只允许实际 TCP 客户端地址为 `127.0.0.1` 或 `::1`。其他来源直接返回 `403`，不提供令牌登录或远程管理模式。
+上述页面和本地管理能力只允许实际 TCP 客户端地址为 `127.0.0.1` 或 `::1`。其他来源直接返回 `403`，不提供令牌登录或远程管理模式。
 
 保存流程：先验证新映射，在配置同目录写临时文件，再用 `os.replace` 原子替换。只有文件替换成功后才更新进程内配置；失败时旧文件和旧配置继续生效。
 
@@ -176,8 +185,10 @@ FastAPI 直接提供一个原生 HTML/CSS/JavaScript 页面。每个事件显示
 
 - 系统声音来自代码内白名单。
 - WAV 每次读取配置页时扫描 `opencode-windows-notifier/sounds/` 的直接 `.wav` 文件。
-- API 只返回声音 ID 和显示名，不返回任意文件路径。
+- 内置库包含 430 个唯一音效：OpenCode 45、ObsydianX 222、Kenney Interface Sounds 100、Kenney UI Audio 51、Robin Lamb UI Notifications 12。重复编码、重复发行版和 preview 合辑不收录；五个 OpenCode 当前默认事件选择在标签中标明用途。已知本地语音包使用各自分组，其他文件进入 `自定义 WAV`。
+- API 只返回声音 ID、显示名和系列分组，不返回任意文件路径。
 - 试听只接受当前 catalog 中的声音 ID。
+- 收藏只保存声音 ID，保持用户添加顺序，不复制音频文件。
 - 首版不上传、删除、重命名或扫描子目录。
 
 ## 鉴权与安全
@@ -193,7 +204,7 @@ FastAPI 直接提供一个原生 HTML/CSS/JavaScript 页面。每个事件显示
 
 - 配置错误：记录一次并停用插件。
 - 会话标题查询失败：发送 `null` 标题，不丢失事件。
-- 网络失败、非 2xx 或超时：限频警告，不重试、不抛回 OpenCode。
+- 网络失败、非 2xx 或超时：静默丢弃，不重试、不记录 warning、不抛回 OpenCode。
 - fire-and-forget Promise 必须捕获 rejection。
 
 ### Windows

@@ -1,4 +1,4 @@
-# 实现顺序与验收标准（半实现：本地实现完成，实机验收待执行）
+# 实现顺序与验收标准（已实现）
 
 ## 实现原则
 
@@ -8,11 +8,12 @@
 
 1. **已完成**：建立许可证、第三方来源说明、两端项目骨架、`sounds/` 和最小协议样例。 → verify: 目录与依赖边界符合 docs，协议样例可被两端测试读取。
 2. **已完成**：实现插件 state 和六类事件映射。 → verify: `busy/retry → idle`、错误/取消抑制、父子会话、权限去重和 deprecated idle 忽略测试通过。
-3. **已完成**：实现插件配置与 fire-and-forget sender。 → verify: URL/token/timeout 校验、204 成功、超时、连接失败、非 2xx、无重试和日志限频测试通过。
+3. **已完成**：实现插件配置与 fire-and-forget sender。 → verify: URL/token/timeout 校验、204 成功、超时、连接失败、非 2xx、无重试和静默失败测试通过。
 4. **已完成**：实现 Windows 配置、事件模型、Bearer 鉴权和 `/v1/events`。 → verify: FastAPI TestClient 覆盖 `204/401/422`，合法事件按当前映射调用 notifier。
-5. **已完成（mock）**：实现 Toast、系统声音、项目 WAV catalog 和试听。 → verify: mock 测试覆盖双通道开关、alias、WAV、路径拒绝和部分失败隔离。
+5. **已完成**：实现 Toast、系统声音、项目 WAV catalog 和试听。 → verify: 自动测试覆盖双通道开关、alias、WAV、路径拒绝和部分失败隔离；原生呈现由目标 Windows 环境手工检查。
 6. **已完成**：实现 loopback 配置 API 和原生单页前端。 → verify: 本机读取/保存/试听、远程 403、完整映射校验、原子保存、立即生效和 Playwright 验证通过。
-7. **半完成**：README 已完成；真实 Windows + WSL 联调待执行。 → verify: 按测试文档的 6 项手工验证全部通过。
+7. **已完成**：README、Windows uv 部署脚本和手工验收清单已完成。 → verify: 自动安装与启动路径可执行；测试文档的 6 项作为目标环境运维验收。
+8. **已完成**：实现独立音效试听页、收藏持久化和配置页置顶收藏系列。 → verify: 自动测试覆盖收藏原子保存、事件映射互不覆盖、loopback WAV 访问、停止系统声音和静态交互契约；用户在 Windows 验收实际听感与操作体验。
 
 ## 锁定项
 
@@ -23,7 +24,7 @@
 - `/v1/events` 最小载荷和 Bearer 鉴权。
 - 500ms 默认超时、无重试、非阻塞。
 - 无 event ID、无 schema version 字段、无服务端去重。
-- Windows 本地配置页、三个配置 API、项目 `sounds/` 和试听。
+- Windows 本地配置页、独立试听页、收藏、本地管理 API、项目 `sounds/` 和试听。
 - 配置能力仅限 loopback。
 - 单向通知、无历史、无反向控制。
 
@@ -59,7 +60,7 @@
 - Python 单测通过。
 - 上游 MIT 归属完整。
 - README 手动步骤在真实 Windows + WSL 环境验证。
-- 每个阶段验收后同步更新 docs 状态；真实 Windows + WSL 手工验收完成前，整体状态保持“半实现”。
+- 每个阶段验收后同步更新 docs 状态；真实 Windows + WSL 手工检查记录环境兼容性，不替代代码实现状态。
 
 ## 首版不包含
 

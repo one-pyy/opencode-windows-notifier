@@ -36,6 +36,13 @@ def make_client(tmp_path: Path):
         def preview(self, source: str) -> None:
             del source
 
+        def stop_preview(self) -> None:
+            return None
+
+        def audio_file(self, source: str) -> Path | None:
+            del source
+            return None
+
     client = TestClient(create_app(state, FakeNotifier()))
     return client, calls
 

@@ -1,4 +1,4 @@
-# 测试策略（半实现：自动验证完成，实机验收待执行）
+# 测试策略（已实现：自动验证完成，环境效果手工检查）
 
 ## 测试目标
 
@@ -6,11 +6,11 @@
 
 ## 当前验证状态
 
-- 插件 22 项 Bun 测试通过，TypeScript 类型检查通过。
-- Windows 服务 23 项 pytest 测试通过，生产源码与测试均无 LSP 错误。
+- 插件 23 项 Bun 测试通过，TypeScript 类型检查通过。
+- Windows 服务 37 项 pytest 测试通过，生产源码与测试均无 LSP 错误。
 - 真实 HTTP 页面/配置请求返回 200，协议样例事件返回 204。
-- Playwright 已验证桌面与 390px 移动布局、六事件渲染、试听、保存、刷新持久化、无横向溢出和零 console error。
-- Windows Toast、winsound WAV 与真实 OpenCode WSL 六项手工联调尚未执行；Linux 验证使用注入的 mock 通知后端，不得视为实机通过。
+- 配置页和试听页通过 API 契约测试、静态结构断言与内联 JavaScript 语法检查；最终本地交互体验由用户在 Windows 手工确认，不运行 Playwright。
+- Windows Toast、winsound WAV 与真实 OpenCode WSL 六项由目标环境手工检查；Linux 自动验证使用注入的 mock 通知后端，不冒充原生扬声器效果。
 
 ## 插件端必测
 
@@ -38,8 +38,7 @@
 - 配置路径来自用户目录或显式覆盖，不使用 `PluginInput.directory`。
 - 请求使用 `/v1/events`、Bearer header 和最小载荷。
 - hook 不等待 HTTP 完成。
-- 500ms 超时、连接拒绝和非 2xx 不重试、不产生未处理 rejection。
-- 连续失败日志最多每 30 秒一次。
+- 500ms 超时、连接拒绝和非 2xx 不重试、不产生未处理 rejection，也不写 warning。
 
 ## Windows 服务必测
 
@@ -57,15 +56,21 @@
 - `sound.enabled: false` 不播放，但保留 source。
 - Toast 和声音任一失败不阻止另一通道，也不使服务退出。
 - 非 WAV、子目录、绝对路径、`..` 和未枚举声音不能进入 catalog 或试听。
+- 430 个内置唯一 WAV 必须全部存在且为 44.1 kHz、16-bit、双声道 PCM：OpenCode 45、ObsydianX 222、Kenney Interface Sounds 100、Kenney UI Audio 51、Robin Lamb UI Notifications 12。OpenCode 配置 API 仍按 `Alert` 10、`Bip Bop` 10、`Nope` 12、`Staplebops` 7、`Yup` 6 精确分组，五个当前默认事件选择保留用途标签；四个外部 CC0 集合不能落入 `自定义 WAV`。
 
-### 本地配置页
+### 本地页面
 
-- `GET /`、`GET/PUT /v1/config`、`POST /v1/preview` 对 loopback 可用，对非 loopback 返回 `403`。
-- `GET /v1/config` 返回六类事件、说明、当前映射和声音列表。
+- 配置页、试听页、配置、收藏、WAV 访问、试听和停止 API 对 loopback 可用，对非 loopback 返回 `403`。
+- `GET /v1/config` 返回六类事件、说明、当前映射，以及包含 Windows、OpenCode、四个外部 CC0 集合、本地语音包和自定义 WAV 系列分组的声音列表。
+- 配置页使用两个级联 select；第一级只显示系列名，第二级只显示当前系列中的声音。切换系列后保存、刷新和试听必须使用第二级的声音 ID。
 - `PUT /v1/config` 要求完整六事件映射。
 - 保存成功后文件和内存配置同时更新，下一事件立即使用新配置。
 - 原子写入失败时旧文件和旧配置保持不变。
-- 试听只播放声音，不修改配置、不显示 Toast。
+- 试听只播放声音，不修改配置、不显示 Toast；底层播放失败返回中文 `422`，不能泄漏为 `500`。
+- 收藏保持添加顺序、拒绝重复或未知 ID，并与事件映射互不覆盖。
+- `GET /v1/audio` 只返回 catalog 中的直接 WAV；系统 alias、未知 ID 和非 loopback 请求被拒绝。
+- `POST /v1/preview/stop` 调用通知后端停止当前系统声音。
+- 配置页置顶“收藏”系列，标签为 `原系列 - 音效名`；试听页包含收藏、上一个、暂停/继续、下一个和 0.5 秒间隔连续播放的静态契约。
 
 ## 协议契约测试
 

@@ -12,9 +12,9 @@ startup.
 
 ## Status
 
-The plugin and Windows service are implemented. Automated tests, real HTTP
-requests, and desktop/mobile browser checks pass. Native Windows Toast/WAV and
-real OpenCode-in-WSL end-to-end checks still require a Windows machine.
+The plugin and Windows service are implemented. Automated tests and real HTTP
+requests pass. Native Windows Toast/WAV, the local audition experience, and real
+OpenCode-in-WSL end-to-end checks still require the user to verify them on Windows.
 
 ## How it works
 
@@ -67,6 +67,10 @@ Start the receiver manually:
 Open `http://127.0.0.1:8765` in Windows. The page changes only the six event
 presentation mappings; it never exposes the token or listen address.
 
+Open `http://127.0.0.1:8765/audition` to compare one sound series at a time.
+The audition page supports previous/pause-resume/next controls, sequential
+playback from the current sound with a 0.5-second gap, and persistent favorites.
+
 ## WSL plugin
 
 Install the plugin dependencies from WSL:
@@ -108,12 +112,24 @@ Register the absolute TypeScript entry path in the OpenCode `plugin` array:
 
 Restart OpenCode after changing the plugin configuration.
 
-## Custom sounds
+## Built-in and custom sounds
 
 Place direct `.wav` files in `opencode-windows-notifier/sounds/`. Refresh the
-Windows configuration page, choose the new sound, use **Play** to preview it,
+Windows configuration page, choose its series and sound, use **试听** to preview it,
 then save. Subdirectories, MP3 files, arbitrary paths, and uploads are not
 supported.
+
+The repository bundles 430 unique PCM WAV sounds: all 45 current OpenCode
+sounds, 222 sounds from ObsydianX Interface SFX Pack 1, 100 Kenney Interface
+Sounds, 51 Kenney UI Audio sounds, and 12 Robin Lamb UI notification sounds.
+The page first lists series names, then lists only the sounds in the selected
+series. Duplicate encodings and the duplicate OpenGameArt copy of Kenney UI
+Audio are not bundled a second time. Fixed sources, licenses, and conversion
+details are recorded in `THIRD_PARTY_NOTICES.md`.
+
+Favorited sounds appear in a pinned **收藏** series on the configuration page.
+Each favorite is labeled as `original series - sound name` and still references
+the original sound file.
 
 ## Security
 
@@ -138,7 +154,9 @@ curl -i \
 The expected response is `204 No Content`. Then verify on the real target:
 
 1. Open the local page and confirm all six events and sound choices appear.
-2. Run one main session and one subagent; each should emit one completion.
+2. Open `/audition`, favorite a sound, and confirm it appears in the pinned
+   **收藏** series on the configuration page.
+3. Run one main session and one subagent; each should emit one completion.
 3. Enable `subagent_complete` in the page and confirm the next subagent uses it.
 4. Trigger permission, question, error, and double-Esc cancellation events.
 5. Preview and save a project WAV, then confirm the next matching event uses it.

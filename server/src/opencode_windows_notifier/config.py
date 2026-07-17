@@ -56,6 +56,7 @@ class ServerConfig(BaseModel):
     listen_port: int = Field(ge=1, le=65535)
     token: str = Field(min_length=1)
     events: dict[str, EventPresentation]
+    favorites: tuple[str, ...] = ()
 
     @field_validator("token")
     @classmethod
@@ -63,6 +64,15 @@ class ServerConfig(BaseModel):
         if not token.strip():
             raise ValueError("token must not be blank")
         return token
+
+    @field_validator("favorites")
+    @classmethod
+    def validate_favorites(cls, favorites: tuple[str, ...]) -> tuple[str, ...]:
+        if len(favorites) != len(set(favorites)):
+            raise ValueError("favorites must not contain duplicate sound IDs")
+        if any(not sound_id.strip() for sound_id in favorites):
+            raise ValueError("favorites must not contain blank sound IDs")
+        return favorites
 
     @model_validator(mode="after")
     def validate_event_map(self) -> ServerConfig:
@@ -111,15 +121,37 @@ class ConfigState:
                 if presentation.sound.source not in valid_sound_ids:
                     raise ValueError(f"unknown sound ID: {presentation.sound.source}")
 
-            temporary_path = self._write_temporary(candidate)
-            try:
-                with self._state_lock:
-                    os.replace(temporary_path, self._path)
-                    self._config = candidate
-            except Exception:
-                temporary_path.unlink(missing_ok=True)
-                raise
-            return candidate.model_copy(deep=True)
+            return self._replace_config(candidate)
+
+    def replace_favorites(
+        self,
+        favorites: list[str] | tuple[str, ...],
+        valid_sound_ids: Set[str],
+    ) -> ServerConfig:
+        with self._write_lock:
+            with self._state_lock:
+                current = self._config.model_dump(mode="python")
+            candidate = ServerConfig.model_validate(
+                {
+                    **current,
+                    "favorites": tuple(favorites),
+                }
+            )
+            if unknown_sound_ids := set(candidate.favorites) - set(valid_sound_ids):
+                raise ValueError(f"unknown sound ID: {sorted(unknown_sound_ids)[0]}")
+
+            return self._replace_config(candidate)
+
+    def _replace_config(self, candidate: ServerConfig) -> ServerConfig:
+        temporary_path = self._write_temporary(candidate)
+        try:
+            with self._state_lock:
+                os.replace(temporary_path, self._path)
+                self._config = candidate
+        except Exception:
+            temporary_path.unlink(missing_ok=True)
+            raise
+        return candidate.model_copy(deep=True)
 
     def _write_temporary(self, config: ServerConfig) -> Path:
         self._path.parent.mkdir(parents=True, exist_ok=True)
