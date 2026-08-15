@@ -7,9 +7,12 @@
 ## 文件边界
 
 - `opencode-windows-notifier/plugin/src/config.ts`：读取并验证 URL、token 和 timeout。
+- `opencode-windows-notifier/plugin/src/hooks.ts`：OpenCode hooks、事件映射和逻辑事件类型。
 - `opencode-windows-notifier/plugin/src/state.ts`：会话活动状态、父子关系和权限时间去重。
 - `opencode-windows-notifier/plugin/src/sender.ts`：最小载荷与 HTTP 投递。
-- `opencode-windows-notifier/plugin/src/index.ts`：OpenCode hooks 和事件映射。
+- `opencode-windows-notifier/plugin/src/index.ts`：只负责加载配置、组装 sender，并默认导出唯一插件入口。
+
+OpenCode legacy 插件加载器会把入口模块中的每个运行时导出都视为插件。`index.ts` 不得导出 helper 或第二个插件函数；可测试 helper 必须放在内部模块中。
 
 ## 上游复用
 

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { Event } from "@opencode-ai/sdk"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import { createEventHooks, type LogicalEvent } from "../src/index"
+import * as pluginModule from "../src/index"
+import { createEventHooks, type LogicalEvent } from "../src/hooks"
 
 function createHarness(sessions: Record<string, { title: string; parentID?: string }> = {}) {
   const emitted: LogicalEvent[] = []
@@ -27,6 +28,10 @@ async function publish(hooks: Pick<Hooks, "event">, event: unknown): Promise<voi
 }
 
 describe("OpenCode event mapping", () => {
+  test("plugin entry exposes exactly one runtime function", () => {
+    expect(Object.values(pluginModule).filter((value) => typeof value === "function")).toHaveLength(1)
+  })
+
   test("busy to idle emits one main completion", async () => {
     const harness = createHarness()
     await publish(harness.hooks, { type: "session.created", properties: { info: { id: "main", title: "Build feature" } } })

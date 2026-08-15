@@ -1,5 +1,5 @@
 import type { PluginConfig } from "./config"
-import type { LogicalEvent, LogicalEventType } from "./index"
+import type { LogicalEvent, LogicalEventType } from "./hooks"
 
 export interface EventPayload {
   event: LogicalEventType

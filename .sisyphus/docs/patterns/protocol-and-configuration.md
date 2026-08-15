@@ -7,6 +7,7 @@ opencode-windows-notifier/
 ├── plugin/
 │   ├── src/
 │   │   ├── index.ts
+│   │   ├── hooks.ts
 │   │   ├── config.ts
 │   │   ├── state.ts
 │   │   └── sender.ts

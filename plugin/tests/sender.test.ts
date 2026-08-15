@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import type { PluginConfig } from "../src/config"
-import { createEventHooks } from "../src/index"
+import { createEventHooks } from "../src/hooks"
 import {
   buildEventPayload,
   sendEvent,
