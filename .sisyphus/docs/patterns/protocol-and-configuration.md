@@ -110,7 +110,8 @@ Content-Type: application/json
 {
   "server_url": "http://172.20.48.1:8765",
   "token": "replace-with-a-long-random-token",
-  "timeout_ms": 500
+  "timeout_ms": 500,
+  "delay_ms": 8000
 }
 ```
 
@@ -119,6 +120,7 @@ Content-Type: application/json
 - `server_url` 不含 `/v1/events`，插件固定追加该路径。
 - `token` 必填。
 - `timeout_ms` 默认 500，范围 100..2000。
+- `delay_ms` 默认 8000，范围 1000..60000；作用于 `complete`、`subagent_complete` 与普通 `error` 的停止类通知延迟复查。
 - 未知键报错；插件配置不包含事件、Toast 或声音开关。
 - 配置无效时插件记录一次错误并停用自身，不影响 OpenCode。
 - 首版不热重载，修改后重启 OpenCode。

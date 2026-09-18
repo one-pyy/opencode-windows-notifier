@@ -94,11 +94,16 @@ Edit `~/.config/opencode/opencode-windows-notifier.json`:
 {
   "server_url": "http://WINDOWS_HOST:8765",
   "token": "THE-SAME-TOKEN-AS-WINDOWS",
-  "timeout_ms": 500
+  "timeout_ms": 500,
+  "delay_ms": 8000
 }
 ```
 
 With WSL mirrored networking, `http://127.0.0.1:8765` may work directly.
+
+`delay_ms` delays the `complete`, `subagent_complete`, and `error` notifications
+so a session that the auto-continue plugin recovers on its own stays silent. It
+must be longer than that plugin's 5-second review delay; the default is 8000.
 
 Register the absolute TypeScript entry path in the OpenCode `plugin` array:
 

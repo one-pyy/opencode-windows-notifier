@@ -18,6 +18,18 @@ describe("plugin configuration", () => {
       serverUrl: "http://172.20.48.1:8765",
       token: "secret",
       timeoutMs: 500,
+      delayMs: 8_000,
+    })
+  })
+
+  test("accepts an explicit error delay", () => {
+    expect(
+      parsePluginConfig({ server_url: "http://172.20.48.1:8765", token: "secret", delay_ms: 12_000 }),
+    ).toEqual({
+      serverUrl: "http://172.20.48.1:8765",
+      token: "secret",
+      timeoutMs: 500,
+      delayMs: 12_000,
     })
   })
 
@@ -36,6 +48,9 @@ describe("plugin configuration", () => {
       { server_url: "http://host", token: "" },
       { server_url: "http://host", token: "secret", timeout_ms: 99 },
       { server_url: "http://host", token: "secret", timeout_ms: 2_001 },
+      { server_url: "http://host", token: "secret", delay_ms: 999 },
+      { server_url: "http://host", token: "secret", delay_ms: 60_001 },
+      { server_url: "http://host", token: "secret", delay_ms: "8000" },
       { server_url: "http://host", token: "secret", extra: true },
     ]
     for (const value of invalidValues) {

@@ -6,15 +6,17 @@ export interface PluginConfig {
   serverUrl: string
   token: string
   timeoutMs: number
+  delayMs: number
 }
 
 type ConfigFile = {
   server_url: string
   token: string
   timeout_ms?: number
+  delay_ms?: number
 }
 
-const CONFIG_KEYS = new Set(["server_url", "token", "timeout_ms"])
+const CONFIG_KEYS = new Set(["server_url", "token", "timeout_ms", "delay_ms"])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -65,10 +67,16 @@ export function parsePluginConfig(value: unknown): PluginConfig {
     throw new Error("timeout_ms must be an integer from 100 through 2000")
   }
 
+  const delayMs = file.delay_ms ?? 8_000
+  if (!Number.isInteger(delayMs) || delayMs < 1_000 || delayMs > 60_000) {
+    throw new Error("delay_ms must be an integer from 1000 through 60000")
+  }
+
   return {
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
     token: file.token,
     timeoutMs,
+    delayMs,
   }
 }
 

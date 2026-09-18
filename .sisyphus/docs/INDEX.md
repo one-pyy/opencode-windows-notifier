@@ -5,9 +5,9 @@ Purpose: 记录 OpenCode WSL 事件投递到 Windows Toast 与声音服务的最
 
 ## Summary
 
-本项目已实现 WSL TypeScript 插件、Windows FastAPI 服务、中文原生配置页、独立音效试听页、收藏持久化、两级声音选择、430 个内置唯一音效、许可证、README 和 Windows uv 部署脚本。内置库包含 OpenCode 45 个当前音效及四个经许可核验的 CC0 UI 音效集合；重复编码和重复发行版不重复收录。插件 23 项测试与类型检查通过，服务 37 项测试通过。Windows 原生 Toast/WAV、试听页实际体验和真实 OpenCode WSL 六事件联调由用户在目标 Windows 环境手工验收，不代表代码仍有未实现模块。
+本项目已实现 WSL TypeScript 插件、Windows FastAPI 服务、中文原生配置页、独立音效试听页、收藏持久化、两级声音选择、430 个内置唯一音效、许可证、README 和 Windows uv 部署脚本。内置库包含 OpenCode 45 个当前音效及四个经许可核验的 CC0 UI 音效集合；重复编码和重复发行版不重复收录。插件 32 项测试与类型检查通过，服务 37 项测试通过。Windows 原生 Toast/WAV、试听页实际体验和真实 OpenCode WSL 六事件联调由用户在目标 Windows 环境手工验收，不代表代码仍有未实现模块。
 
-系统由 WSL TypeScript 插件和 Windows Python FastAPI 服务组成。插件判断 OpenCode 会话语义并把全部六类逻辑事件非阻塞发送到 Windows；Windows 通过本地单页配置决定每类事件是否 Toast、是否播放系统声音或项目 `sounds/` 中的 WAV。首版不做服务端事件去重、通知历史、远程配置或反向控制。
+系统由 WSL TypeScript 插件和 Windows Python FastAPI 服务组成。插件判断 OpenCode 会话语义并把全部六类逻辑事件非阻塞发送到 Windows；Windows 通过本地单页配置决定每类事件是否 Toast、是否播放系统声音或项目 `sounds/` 中的 WAV。停止类通知（`complete`、`subagent_complete`、普通 `error`）先延迟 `delay_ms` 再复查会话尾部，只有会话确实停止才发送，避免 `opencode-auto-continue` 恢复后仍误报。首版不做服务端事件去重、通知历史、远程配置或反向控制。
 
 ## 全局约束
 

@@ -11,9 +11,13 @@ const WindowsNotifierPlugin: Plugin = async ({ client, directory }) => {
   }
 
   const projectName = basename(directory) || null
-  return createEventHooks(client, (event) => {
-    sendEvent(config, buildEventPayload(event, projectName))
-  })
+  return createEventHooks(
+    client,
+    (event) => {
+      sendEvent(config, buildEventPayload(event, projectName))
+    },
+    { delayMs: config.delayMs, directory },
+  )
 }
 
 export default WindowsNotifierPlugin

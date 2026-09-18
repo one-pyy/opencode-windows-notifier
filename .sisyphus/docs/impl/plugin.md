@@ -34,6 +34,9 @@ OpenCode legacy 插件加载器会把入口模块中的每个运行时导出都�
 - `serverUrl`
 - `token`
 - `timeoutMs`
+- `delayMs`
+
+`delayMs` 是停止类通知延迟复查窗口，默认 8000，范围 1000..60000。它必须大于 `opencode-auto-continue` 的 5 秒复查延迟，否则会在会话恢复动作发生前就把通知发出去。
 
 未知键或无效值使插件记录一次错误并返回空 hooks，不得使 OpenCode 启动失败。配置基于用户 home 解析，不得使用 `PluginInput.directory`。
 
@@ -54,12 +57,26 @@ interface SessionState {
 
 - `session.status: busy`：若未活动，设 `active = true` 并记录开始时间。
 - `session.status: retry`：保持活动；若此前未活动，按新活动开始处理。
-- `session.status: idle`：仅当 `active = true` 时关闭活动并发送一次 `complete` 或 `subagent_complete`。
-- `session.error`：立即设 `active = false`；abort 名称发送 `cancelled`，其他错误发送 `error`。随后 idle 因不活动而被忽略。
+- `session.status: idle`：仅当 `active = true` 时关闭活动并进入延迟复查，通过后发送一次 `complete` 或 `subagent_complete`。
+- `session.error`：立即设 `active = false`；abort 名称发送 `cancelled`，其他错误进入延迟复查。随后 idle 因不活动而被忽略。
 - deprecated `session.idle`：不处理。
 - `session.deleted`：删除状态。
 
 首版不使用 generation、idle timer、sequence 或定时清理。当前 OpenCode 在错误后发布 idle，`active = false` 已自然抑制重复完成。
+
+### 停止类通知延迟复查
+
+`complete`、`subagent_complete` 和普通 `error` 不立即发送。`hooks.ts` 抄 `opencode-auto-continue` 的尾部复查形状：
+
+1. 事件到达时读取 `client.session.messages(...)`，记录尾部 `info.id`，然后设置 `delayMs` 定时器。
+2. 定时器到点时再次读取尾部 id。
+3. 尾部 id 未变 → 会话确实停止，发送通知；尾部 id 已变 → auto-continue 或用户已推进会话，丢弃该通知。
+4. 读取失败时无法验证，直接发送，宁可误报也不漏掉真实停止。
+5. 同一 session 的新停止类通知会替换仍在等待的旧定时器。
+
+目的：`opencode-auto-continue` 会在 `session.error` 或空回复 / `finish === "unknown"` / DSML 结束的 `session.idle` 后约 5 秒尝试恢复。立即发送的错误或完成通知因此常是误报。已知残余风险：auto-continue 处于 60 秒冷却期时会把恢复推迟到冷却结束，超过 `delayMs` 的连续失败仍可能误报。
+
+`cancelled` 不受延迟影响，因为 auto-continue 明确排除用户中断错误，不会恢复这类会话。`permission`、`question` 同样即时发送。
 
 ## 父子会话
 
@@ -73,9 +90,9 @@ interface SessionState {
 
 | OpenCode 输入 | 输出 |
 |---|---|
-| 活动主会话 `session.status: idle` | `complete` |
-| 活动子会话 `session.status: idle` | `subagent_complete` |
-| 普通 `session.error` | `error` |
+| 活动主会话 `session.status: idle` | `complete`，延迟复查后发送 |
+| 活动子会话 `session.status: idle` | `subagent_complete`，延迟复查后发送 |
+| 普通 `session.error` | `error`，延迟复查后发送 |
 | `MessageAbortedError` / `AbortError` | `cancelled` |
 | `permission.asked` / `permission.ask` | `permission`，1 秒内合并 |
 | `tool.execute.before` + `question` | `question` |
@@ -119,7 +136,7 @@ function sendEvent(config: PluginConfig, payload: EventPayload): void
 1. 加载配置；失败时返回 `{}`。
 2. 创建内存 state 和 sender。
 3. 返回 `event`、`permission.ask`、`tool.execute.before` hooks。
-4. hooks 只等待必要的 OpenCode metadata 查询，不等待 HTTP。
+4. hooks 只等待必要的 OpenCode metadata 查询，不等待 HTTP；错误延迟复查只等待一次尾部消息读取。
 
 ## 测试要点
 

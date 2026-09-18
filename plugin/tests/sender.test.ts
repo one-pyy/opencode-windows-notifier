@@ -13,6 +13,7 @@ const config: PluginConfig = {
   serverUrl: "http://127.0.0.1:8765",
   token: "shared-secret",
   timeoutMs: 100,
+  delayMs: 8_000,
 }
 
 const payload: EventPayload = buildEventPayload(
@@ -112,12 +113,32 @@ describe("HTTP sender", () => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
     })))
 
-    const client = { session: { get: async () => ({ data: null }) } } as never
-    const hooks = createEventHooks(client, (event) => sendEvent(config, buildEventPayload(event, "opencode")), () => 1_000)
+    const client = {
+      session: {
+        get: async () => ({ data: null }),
+        messages: async () => ({ data: [{ info: { id: "msg-done", role: "assistant" } }] }),
+      },
+    } as never
+    const timers: Array<() => void | Promise<void>> = []
+    const scheduler = {
+      setTimeout(callback: () => void | Promise<void>) {
+        timers.push(callback)
+        return timers.length
+      },
+      clearTimeout() {},
+    }
+    const hooks = createEventHooks(
+      client,
+      (event) => sendEvent(config, buildEventPayload(event, "opencode")),
+      { now: () => 1_000, scheduler },
+    )
     await hooks.event?.({ event: { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } } as never })
     const hookResult = hooks.event?.({ event: { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } } as never })
 
     await expect(hookResult).resolves.toBeUndefined()
+    expect(releaseRequest).toBeUndefined()
+
+    await timers[0]?.()
     expect(releaseRequest).toBeDefined()
     releaseRequest?.()
     await settle()

@@ -24,6 +24,27 @@ type PermissionAskedEvent = {
 type RuntimeEvent = Event | PermissionAskedEvent
 type EmitEvent = (event: LogicalEvent) => void
 
+export type EventHookScheduler = {
+  setTimeout(callback: () => void | Promise<void>, delayMs: number): unknown
+  clearTimeout(handle: unknown): void
+}
+
+export interface EventHookOptions {
+  now?: () => number
+  scheduler?: EventHookScheduler
+  delayMs?: number
+  directory?: string
+}
+
+const DEFAULT_NOTIFICATION_DELAY_MS = 8_000
+
+function createDefaultScheduler(): EventHookScheduler {
+  return {
+    setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+    clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  }
+}
+
 async function refreshSession(
   client: PluginInput["client"],
   tracker: SessionTracker,
@@ -43,9 +64,62 @@ async function refreshSession(
 export function createEventHooks(
   client: PluginInput["client"],
   emit: EmitEvent,
-  now: () => number = Date.now,
+  options: EventHookOptions = {},
 ): Pick<Hooks, "event" | "permission.ask" | "tool.execute.before"> {
   const tracker = new SessionTracker()
+  const now = options.now ?? Date.now
+  const scheduler = options.scheduler ?? createDefaultScheduler()
+  const delayMs = options.delayMs ?? DEFAULT_NOTIFICATION_DELAY_MS
+  const pendingNotifications = new Map<string, unknown>()
+
+  async function readTailMessageId(sessionID: string): Promise<string | undefined> {
+    try {
+      const response = await client.session.messages({
+        path: { id: sessionID },
+        query: options.directory ? { directory: options.directory } : {},
+      })
+      return (response.data ?? []).at(-1)?.info?.id
+    } catch {
+      return undefined
+    }
+  }
+
+  // Mirror the auto-continue plugin's delayed tail review for every
+  // session-stopped notification: hold it, then re-read the session tail. An
+  // unchanged tail means the session really stopped; a changed tail means
+  // auto-continue or the user already resumed it, so the notification is dropped.
+  async function scheduleDelayedNotification(
+    sessionID: string,
+    notification: LogicalEvent,
+  ): Promise<void> {
+    const existing = pendingNotifications.get(sessionID)
+    if (existing !== undefined) {
+      scheduler.clearTimeout(existing)
+      pendingNotifications.delete(sessionID)
+    }
+
+    const tailMessageId = await readTailMessageId(sessionID)
+    if (tailMessageId === undefined) {
+      // An unverifiable tail still notifies: a false alarm is cheaper than a missed stop.
+      emit(notification)
+      return
+    }
+
+    const timer = scheduler.setTimeout(async () => {
+      if (pendingNotifications.get(sessionID) !== timer) {
+        return
+      }
+      pendingNotifications.delete(sessionID)
+
+      const currentTailId = await readTailMessageId(sessionID)
+      if (currentTailId !== undefined && currentTailId !== tailMessageId) {
+        return
+      }
+      emit(notification)
+    }, delayMs)
+
+    pendingNotifications.set(sessionID, timer)
+  }
 
   return {
     event: async ({ event }) => {
@@ -85,7 +159,7 @@ export function createEventHooks(
           await refreshSession(client, tracker, sessionID)
         }
         const session = tracker.getSession(sessionID)
-        emit({
+        await scheduleDelayedNotification(sessionID, {
           event: session?.isChild === true ? "subagent_complete" : "complete",
           sessionTitle: session?.title ?? completion.title,
           durationMs: completion.durationMs,
@@ -101,11 +175,17 @@ export function createEventHooks(
         }
 
         const errorName = (runtimeEvent.properties.error as { name?: string } | undefined)?.name
-        emit({
-          event: errorName === "MessageAbortedError" || errorName === "AbortError" ? "cancelled" : "error",
-          sessionTitle,
-          durationMs: null,
-        })
+        if (errorName === "MessageAbortedError" || errorName === "AbortError") {
+          emit({ event: "cancelled", sessionTitle, durationMs: null })
+          return
+        }
+
+        if (sessionID) {
+          await scheduleDelayedNotification(sessionID, { event: "error", sessionTitle, durationMs: null })
+          return
+        }
+
+        emit({ event: "error", sessionTitle, durationMs: null })
       }
     },
 

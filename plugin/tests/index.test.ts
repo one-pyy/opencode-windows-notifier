@@ -2,23 +2,71 @@ import { describe, expect, test } from "bun:test"
 import type { Event } from "@opencode-ai/sdk"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import * as pluginModule from "../src/index"
-import { createEventHooks, type LogicalEvent } from "../src/hooks"
+import { createEventHooks, type EventHookScheduler, type LogicalEvent } from "../src/hooks"
 
-function createHarness(sessions: Record<string, { title: string; parentID?: string }> = {}) {
+type TailMessage = { info?: { id?: string; role?: string } }
+
+function createHarness(
+  sessions: Record<string, { title: string; parentID?: string }> = {},
+  initialTail: TailMessage[] = [],
+) {
   const emitted: LogicalEvent[] = []
   let clock = 1_000
+  let tail = initialTail
+  let messagesShouldFail = false
+  const timers = new Map<number, { callback: () => void | Promise<void>; delayMs: number }>()
+  let nextTimerId = 0
+
   const client = {
     session: {
       get: async ({ path }: { path: { id: string } }) => ({ data: sessions[path.id] }),
+      messages: async () => {
+        if (messagesShouldFail) {
+          throw new Error("session messages unavailable")
+        }
+        return { data: tail }
+      },
     },
   } as unknown as PluginInput["client"]
-  const hooks = createEventHooks(client, (event) => emitted.push(event), () => clock)
+
+  const scheduler: EventHookScheduler = {
+    setTimeout(callback, delayMs) {
+      const id = nextTimerId++
+      timers.set(id, { callback, delayMs })
+      return id
+    },
+    clearTimeout(handle) {
+      timers.delete(handle as number)
+    },
+  }
+
+  const hooks = createEventHooks(client, (event) => emitted.push(event), {
+    now: () => clock,
+    scheduler,
+    delayMs: 8_000,
+  })
 
   return {
     emitted,
     hooks,
     setClock(value: number) {
       clock = value
+    },
+    setTail(next: TailMessage[]) {
+      tail = next
+    },
+    failMessages() {
+      messagesShouldFail = true
+    },
+    pendingDelays() {
+      return [...timers.values()].map((timer) => timer.delayMs)
+    },
+    async runTimers() {
+      const pending = [...timers.entries()]
+      timers.clear()
+      for (const [, timer] of pending) {
+        await timer.callback()
+      }
     },
   }
 }
@@ -39,6 +87,7 @@ describe("OpenCode event mapping", () => {
     harness.setClock(1_250)
     await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
     await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+    await harness.runTimers()
 
     expect(harness.emitted).toEqual([{ event: "complete", sessionTitle: "Build feature", durationMs: 250 }])
   })
@@ -48,8 +97,54 @@ describe("OpenCode event mapping", () => {
     await publish(harness.hooks, { type: "session.status", properties: { sessionID: "child", status: { type: "busy" } } })
     harness.setClock(1_100)
     await publish(harness.hooks, { type: "session.status", properties: { sessionID: "child", status: { type: "idle" } } })
+    await harness.runTimers()
 
     expect(harness.emitted).toEqual([{ event: "subagent_complete", sessionTitle: "Inspect types", durationMs: 100 }])
+  })
+
+  test("an unchanged tail delivers the error after the delay", async () => {
+    const harness = createHarness({ main: { title: "Build feature" } }, [{ info: { id: "msg-error", role: "assistant" } }])
+    await publish(harness.hooks, { type: "session.created", properties: { info: { id: "main", title: "Build feature" } } })
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+
+    expect(harness.emitted).toEqual([])
+    expect(harness.pendingDelays()).toEqual([8_000])
+
+    await harness.runTimers()
+    expect(harness.emitted).toEqual([{ event: "error", sessionTitle: "Build feature", durationMs: null }])
+  })
+
+  test("a resumed tail drops the delayed error", async () => {
+    const harness = createHarness({ main: { title: "Build feature" } }, [{ info: { id: "msg-error", role: "assistant" } }])
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+
+    harness.setTail([
+      { info: { id: "msg-error", role: "assistant" } },
+      { info: { id: "msg-recovery", role: "user" } },
+    ])
+    await harness.runTimers()
+
+    expect(harness.emitted).toEqual([])
+  })
+
+  test("an unverifiable tail delivers the error immediately", async () => {
+    const harness = createHarness({ main: { title: "Build feature" } })
+    harness.failMessages()
+    await publish(harness.hooks, { type: "session.created", properties: { info: { id: "main", title: "Build feature" } } })
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+
+    expect(harness.emitted).toEqual([{ event: "error", sessionTitle: "Build feature", durationMs: null }])
+  })
+
+  test("a later error replaces the pending delayed error", async () => {
+    const harness = createHarness({ main: { title: "Build feature" } }, [{ info: { id: "msg-error", role: "assistant" } }])
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+
+    expect(harness.pendingDelays()).toEqual([8_000])
+    await harness.runTimers()
+    expect(harness.emitted).toHaveLength(1)
+    expect(harness.emitted[0]?.event).toBe("error")
   })
 
   test("error and both abort names suppress later completion", async () => {
@@ -59,11 +154,51 @@ describe("OpenCode event mapping", () => {
       ["AbortError", "cancelled"],
     ] as const) {
       const harness = createHarness()
+      harness.setTail([{ info: { id: "msg-error", role: "assistant" } }])
       await publish(harness.hooks, { type: "session.status", properties: { sessionID: name, status: { type: "busy" } } })
       await publish(harness.hooks, { type: "session.error", properties: { sessionID: name, error: { name, data: {} } } })
+      await harness.runTimers()
       await publish(harness.hooks, { type: "session.status", properties: { sessionID: name, status: { type: "idle" } } })
       expect(harness.emitted.map((event) => event.event)).toEqual([expected])
     }
+  })
+
+  test("delayed error stays pending across a bare idle", async () => {
+    const harness = createHarness({ main: { title: "Build feature" } }, [{ info: { id: "msg-error", role: "assistant" } }])
+    await publish(harness.hooks, { type: "session.created", properties: { info: { id: "main", title: "Build feature" } } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+
+    expect(harness.emitted).toEqual([])
+    await harness.runTimers()
+    expect(harness.emitted).toEqual([{ event: "error", sessionTitle: "Build feature", durationMs: null }])
+  })
+
+  test("a completion is delayed and delivered when the tail is unchanged", async () => {
+    const harness = createHarness({}, [{ info: { id: "msg-done", role: "assistant" } }])
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+    harness.setClock(1_500)
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+
+    expect(harness.emitted).toEqual([])
+    await harness.runTimers()
+    expect(harness.emitted).toEqual([{ event: "complete", sessionTitle: null, durationMs: 500 }])
+  })
+
+  test("a completion is dropped when auto-continue resumes the session", async () => {
+    const harness = createHarness({}, [{ info: { id: "msg-done", role: "assistant" } }])
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+    harness.setClock(1_500)
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+
+    harness.setTail([
+      { info: { id: "msg-done", role: "assistant" } },
+      { info: { id: "msg-recovery", role: "user" } },
+    ])
+    await harness.runTimers()
+
+    expect(harness.emitted).toEqual([])
   })
 
   test("deprecated session.idle and unrelated events are ignored", async () => {
@@ -114,6 +249,7 @@ describe("OpenCode event mapping", () => {
     await publish(harness.hooks, { type: "session.status", properties: { sessionID: "child", status: { type: "busy" } } })
     harness.setClock(1_050)
     await publish(harness.hooks, { type: "session.status", properties: { sessionID: "child", status: { type: "idle" } } })
+    await harness.runTimers()
     expect(harness.emitted).toEqual([{ event: "complete", sessionTitle: null, durationMs: 50 }])
   })
 })
