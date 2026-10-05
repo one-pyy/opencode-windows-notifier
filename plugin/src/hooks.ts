@@ -72,6 +72,24 @@ export function createEventHooks(
   const delayMs = options.delayMs ?? DEFAULT_NOTIFICATION_DELAY_MS
   const pendingNotifications = new Map<string, unknown>()
 
+  async function hasBusyChildren(sessionID: string): Promise<boolean> {
+    try {
+      const query = options.directory ? { directory: options.directory } : {}
+      const children = await client.session.children({ path: { id: sessionID }, query })
+      if (!children.data?.length) {
+        return false
+      }
+      const statuses = await client.session.status({ query })
+      return children.data.some((child) => {
+        const status = statuses.data?.[child.id]?.type
+        return status === "busy" || status === "retry"
+      })
+    } catch {
+      // Preserve completion notifications when child status cannot be verified.
+      return false
+    }
+  }
+
   async function readTailMessageId(sessionID: string): Promise<string | undefined> {
     try {
       const response = await client.session.messages({
@@ -96,6 +114,10 @@ export function createEventHooks(
     if (existing !== undefined) {
       scheduler.clearTimeout(existing)
       pendingNotifications.delete(sessionID)
+    }
+
+    if (notification.event === "complete" && await hasBusyChildren(sessionID)) {
+      return
     }
 
     const tailMessageId = await readTailMessageId(sessionID)

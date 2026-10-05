@@ -68,6 +68,8 @@ interface SessionState {
 
 `complete`、`subagent_complete` 和普通 `error` 不立即发送。`hooks.ts` 抄 `opencode-auto-continue` 的尾部复查形状：
 
+主会话 `complete` 在进入延迟窗口前，先通过 `client.session.children` 查询直属子会话，再用 `client.session.status` 查询状态。任一直属子会话处于 `busy` 或 `retry` 时，丢弃本次完成提醒，不设置定时器或自动补发。全部空闲（状态表中缺失的会话按空闲处理）时继续以下流程；查询失败时沿用原通知流程。此检查不影响 `subagent_complete` 或其他通知。
+
 1. 事件到达时读取 `client.session.messages(...)`，记录尾部 `info.id`，然后设置 `delayMs` 定时器。
 2. 定时器到点时再次读取尾部 id。
 3. 尾部 id 未变 → 会话确实停止，发送通知；尾部 id 已变 → auto-continue 或用户已推进会话，丢弃该通知。

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Event } from "@opencode-ai/sdk"
+import type { Event, SessionStatus } from "@opencode-ai/sdk"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import * as pluginModule from "../src/index"
 import { createEventHooks, type EventHookScheduler, type LogicalEvent } from "../src/hooks"
@@ -14,12 +14,24 @@ function createHarness(
   let clock = 1_000
   let tail = initialTail
   let messagesShouldFail = false
+  let statuses: Record<string, SessionStatus> = {}
+  let childQueryFailure: "children" | "status" | undefined
+  const childrenQueries: string[] = []
   const timers = new Map<number, { callback: () => void | Promise<void>; delayMs: number }>()
   let nextTimerId = 0
 
   const client = {
     session: {
       get: async ({ path }: { path: { id: string } }) => ({ data: sessions[path.id] }),
+      children: async ({ path }: { path: { id: string } }) => {
+        childrenQueries.push(path.id)
+        if (childQueryFailure === "children") throw new Error("children unavailable")
+        return { data: Object.entries(sessions).filter(([, session]) => session.parentID === path.id).map(([id, session]) => ({ id, ...session })) }
+      },
+      status: async () => {
+        if (childQueryFailure === "status") throw new Error("status unavailable")
+        return { data: statuses }
+      },
       messages: async () => {
         if (messagesShouldFail) {
           throw new Error("session messages unavailable")
@@ -49,6 +61,13 @@ function createHarness(
   return {
     emitted,
     hooks,
+    childrenQueries,
+    setStatuses(value: Record<string, SessionStatus>) {
+      statuses = value
+    },
+    failChildQuery(query: "children" | "status") {
+      childQueryFailure = query
+    },
     setClock(value: number) {
       clock = value
     },
@@ -199,6 +218,66 @@ describe("OpenCode event mapping", () => {
     await harness.runTimers()
 
     expect(harness.emitted).toEqual([])
+  })
+
+  test("busy and retry children drop main completion before the delay", async () => {
+    for (const status of [{ type: "busy" }, { type: "retry", attempt: 1, message: "Retrying", next: 2_000 }] satisfies SessionStatus[]) {
+      const harness = createHarness({ child: { title: "Inspect", parentID: "main" } }, [{ info: { id: "msg-done" } }])
+      harness.setStatuses({ child: status })
+      await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+      await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+
+      expect(harness.childrenQueries).toEqual(["main"])
+      expect(harness.pendingDelays()).toEqual([])
+      harness.setStatuses({})
+      await harness.runTimers()
+      expect(harness.emitted).toEqual([])
+    }
+  })
+
+  test("idle children and unrelated busy sessions preserve the delayed completion", async () => {
+    for (const childStatus of [undefined, { type: "idle" }] satisfies (SessionStatus | undefined)[]) {
+      const harness = createHarness({ child: { title: "Inspect", parentID: "main" } }, [{ info: { id: "msg-done" } }])
+      harness.setStatuses({ unrelated: { type: "busy" }, ...(childStatus ? { child: childStatus } : {}) })
+      await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+      await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+
+      expect(harness.emitted).toEqual([])
+      expect(harness.pendingDelays()).toEqual([8_000])
+      await harness.runTimers()
+      expect(harness.emitted.map((event) => event.event)).toEqual(["complete"])
+    }
+  })
+
+  test("child query failures preserve the delayed main completion", async () => {
+    for (const query of ["children", "status"] as const) {
+      const harness = createHarness({ child: { title: "Inspect", parentID: "main" } }, [{ info: { id: "msg-done" } }])
+      harness.failChildQuery(query)
+      await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+      await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+      expect(harness.pendingDelays()).toEqual([8_000])
+      await harness.runTimers()
+      expect(harness.emitted.map((event) => event.event)).toEqual(["complete"])
+    }
+  })
+
+  test("busy children suppress completion even when the tail is unavailable", async () => {
+    const harness = createHarness({ child: { title: "Inspect", parentID: "main" } })
+    harness.setStatuses({ child: { type: "busy" } })
+    harness.failMessages()
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+    expect(harness.emitted).toEqual([])
+  })
+
+  test("child completion and errors do not query child activity", async () => {
+    const harness = createHarness({ child: { title: "Inspect", parentID: "main" } }, [{ info: { id: "msg-done" } }])
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "child", status: { type: "busy" } } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "child", status: { type: "idle" } } })
+    await publish(harness.hooks, { type: "session.error", properties: { sessionID: "main", error: { name: "UnknownError", data: {} } } })
+    await harness.runTimers()
+    expect(harness.childrenQueries).toEqual([])
+    expect(harness.emitted.map((event) => event.event)).toEqual(["subagent_complete", "error"])
   })
 
   test("deprecated session.idle and unrelated events are ignored", async () => {
