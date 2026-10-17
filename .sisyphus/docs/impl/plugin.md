@@ -131,7 +131,21 @@ function sendEvent(config: PluginConfig, payload: EventPayload): void
 - 固定 POST `/v1/events`，使用 JSON 和 Bearer token。
 - 不重试。
 - Promise 必须捕获全部 rejection。
-- Windows 连接拒绝、超时和非 2xx 响应全部静默丢弃，不记录 warning，不影响 OpenCode。
+- Windows 连接拒绝、超时和非 2xx 响应不重试，写入诊断日志，不显示 warning，不影响 OpenCode。
+
+## 诊断日志
+
+插件通过 `client.app.log` 异步写入 OpenCode 运行日志，服务名为 `opencode-windows-notifier`，级别为 `info`。日志接口失败不会影响通知。启动时记录 `plugin.enabled` 及延迟、超时参数；通知相关记录带 `sessionID`，不改变发送给 Windows 的 HTTP 载荷。
+
+- `session.status`：收到的状态、此前是否活动及是否产生完成判定；无活动转换的 idle 记录 `no_active_transition`。
+- `completion.classified`：主会话或子会话分类与活动时长。
+- `children.checked`：直属子会话数量，以及忙碌子会话的标识和状态；查询无法验证时记录 `children.unavailable`，继续原通知流程。
+- `notification.skipped`：因 `busy_children`、`tail_changed`、`replaced_timer` 或 `duplicate_permission` 跳过。
+- `notification.scheduled` / `notification.replaced`：等待窗口及旧通知被替换；`tail.unavailable` / `tail.reviewed` 记录尾部检查的验证状态。
+- `notification.emit`：开始发送逻辑通知；`session.error` 只记录是否取消，不记录原始错误正文。
+- `delivery.started` / `delivery.finished`：事件类型、会话标识、耗时及投递结果。`accepted` 表示 HTTP 2xx，`http_error` 带 HTTP 状态码；`timeout` 和 `network_error` 区分超时与其他请求异常。HTTP 接受不证明 Windows 已显示 Toast 或播放声音。
+
+日志不输出令牌、服务器 URL、请求头、会话标题、消息正文或原始异常内容。按服务名定位插件日志，再按 `sessionID` 串联状态、判定和投递记录。日志只覆盖插件重新加载后的事件，不能补回历史会话的通知诊断。
 
 ## 插件入口
 

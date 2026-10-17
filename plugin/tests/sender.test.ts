@@ -47,6 +47,36 @@ describe("event payload", () => {
 })
 
 describe("HTTP sender", () => {
+  test("diagnostics correlate delivery results without exposing secrets or payload text", async () => {
+    for (const result of ["accepted", "http_error", "network_error", "timeout"] as const) {
+      const logs: Array<{ message: string; extra: Record<string, unknown> }> = []
+      installFetch(mock(async (_input, init) => {
+        if (result === "network_error") throw new Error(config.token + payload.message)
+        if (result === "timeout") {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error(config.token)))
+          })
+        }
+        return new Response(null, { status: result === "accepted" ? 204 : 503 })
+      }))
+      expect(sendEvent({ ...config, timeoutMs: 10 }, payload, {
+        sessionID: "main",
+        log: (message, extra) => { logs.push({ message, extra }) },
+      })).toBeUndefined()
+      await settle()
+      expect(logs.map((entry) => entry.message)).toEqual(["delivery.started", "delivery.finished"])
+      expect(logs[1]?.extra).toMatchObject({ sessionID: "main", event: "complete", result })
+      if (result === "accepted" || result === "http_error") {
+        expect(logs[1]?.extra.status).toBe(result === "accepted" ? 204 : 503)
+      }
+      const serialized = JSON.stringify(logs)
+      expect(serialized).not.toContain(config.token)
+      expect(serialized).not.toContain(payload.message)
+      expect(serialized).not.toContain(payload.session_title!)
+      expect(serialized).not.toContain(config.serverUrl)
+    }
+  })
+
   test("posts the minimal payload with bearer authentication", async () => {
     const requests: Array<{ input: string | URL | Request; init?: RequestInit }> = []
     installFetch(mock(async (input, init) => {

@@ -1,5 +1,6 @@
 import type { PluginConfig } from "./config"
 import type { LogicalEvent, LogicalEventType } from "./hooks"
+import type { DiagnosticLogger } from "./diagnostics"
 
 export interface EventPayload {
   event: LogicalEventType
@@ -35,14 +36,23 @@ export function buildEventPayload(
   }
 }
 
-async function postEvent(config: PluginConfig, payload: EventPayload): Promise<void> {
+interface DeliveryDiagnostics {
+  sessionID?: string | null
+  log?: DiagnosticLogger
+}
+
+async function postEvent(config: PluginConfig, payload: EventPayload, diagnostics: DeliveryDiagnostics): Promise<void> {
+  const log = diagnostics.log ?? (() => {})
+  const context = { sessionID: diagnostics.sessionID ?? null, event: payload.event }
+  const startedAt = Date.now()
   const controller = new AbortController()
   const timer = setTimeout(() => {
     controller.abort()
   }, config.timeoutMs)
 
   try {
-    await fetch(`${config.serverUrl}/v1/events`, {
+    log("delivery.started", { ...context, timeoutMs: config.timeoutMs })
+    const response = await fetch(`${config.serverUrl}/v1/events`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.token}`,
@@ -51,13 +61,15 @@ async function postEvent(config: PluginConfig, payload: EventPayload): Promise<v
       body: JSON.stringify(payload),
       signal: controller.signal,
     })
+    log("delivery.finished", { ...context, result: response.ok ? "accepted" : "http_error", status: response.status, elapsedMs: Date.now() - startedAt })
   } catch {
+    log("delivery.finished", { ...context, result: controller.signal.aborted ? "timeout" : "network_error", elapsedMs: Date.now() - startedAt })
     // Windows notifications are optional; delivery failures must stay invisible to OpenCode.
   } finally {
     clearTimeout(timer)
   }
 }
 
-export function sendEvent(config: PluginConfig, payload: EventPayload): void {
-  void postEvent(config, payload)
+export function sendEvent(config: PluginConfig, payload: EventPayload, diagnostics: DeliveryDiagnostics = {}): void {
+  void postEvent(config, payload, diagnostics)
 }

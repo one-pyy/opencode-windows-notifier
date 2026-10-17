@@ -1,6 +1,7 @@
 import type { Event } from "@opencode-ai/sdk"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { SessionTracker } from "./state"
+import type { DiagnosticLogger } from "./diagnostics"
 
 export type LogicalEventType =
   | "permission"
@@ -22,7 +23,7 @@ type PermissionAskedEvent = {
 }
 
 type RuntimeEvent = Event | PermissionAskedEvent
-type EmitEvent = (event: LogicalEvent) => void
+type EmitEvent = (event: LogicalEvent, sessionID?: string | null) => void
 
 export type EventHookScheduler = {
   setTimeout(callback: () => void | Promise<void>, delayMs: number): unknown
@@ -34,6 +35,7 @@ export interface EventHookOptions {
   scheduler?: EventHookScheduler
   delayMs?: number
   directory?: string
+  log?: DiagnosticLogger
 }
 
 const DEFAULT_NOTIFICATION_DELAY_MS = 8_000
@@ -71,20 +73,41 @@ export function createEventHooks(
   const scheduler = options.scheduler ?? createDefaultScheduler()
   const delayMs = options.delayMs ?? DEFAULT_NOTIFICATION_DELAY_MS
   const pendingNotifications = new Map<string, unknown>()
+  const log = options.log ?? (() => {})
+
+  function notify(notification: LogicalEvent, sessionID: string | null): void {
+    log("notification.emit", { sessionID, event: notification.event })
+    emit(notification, sessionID)
+  }
 
   async function hasBusyChildren(sessionID: string): Promise<boolean> {
     try {
       const query = options.directory ? { directory: options.directory } : {}
       const children = await client.session.children({ path: { id: sessionID }, query })
+      if (!children.data) {
+        log("children.unavailable", { sessionID, stage: "children", action: "continue" })
+        return false
+      }
       if (!children.data?.length) {
+        log("children.checked", { sessionID, childCount: 0, busyChildren: [] })
         return false
       }
       const statuses = await client.session.status({ query })
-      return children.data.some((child) => {
+      if (!statuses.data) {
+        log("children.unavailable", { sessionID, stage: "status", action: "continue" })
+      }
+      const busyChildren = children.data.filter((child) => {
         const status = statuses.data?.[child.id]?.type
         return status === "busy" || status === "retry"
       })
+      log("children.checked", {
+        sessionID,
+        childCount: children.data.length,
+        busyChildren: busyChildren.map((child) => ({ sessionID: child.id, status: statuses.data?.[child.id]?.type })),
+      })
+      return busyChildren.length > 0
     } catch {
+      log("children.unavailable", { sessionID, stage: "query", action: "continue" })
       // Preserve completion notifications when child status cannot be verified.
       return false
     }
@@ -114,33 +137,40 @@ export function createEventHooks(
     if (existing !== undefined) {
       scheduler.clearTimeout(existing)
       pendingNotifications.delete(sessionID)
+      log("notification.replaced", { sessionID, event: notification.event })
     }
 
     if (notification.event === "complete" && await hasBusyChildren(sessionID)) {
+      log("notification.skipped", { sessionID, event: notification.event, reason: "busy_children" })
       return
     }
 
     const tailMessageId = await readTailMessageId(sessionID)
     if (tailMessageId === undefined) {
       // An unverifiable tail still notifies: a false alarm is cheaper than a missed stop.
-      emit(notification)
+      log("tail.unavailable", { sessionID, event: notification.event, stage: "initial", action: "emit" })
+      notify(notification, sessionID)
       return
     }
 
     const timer = scheduler.setTimeout(async () => {
       if (pendingNotifications.get(sessionID) !== timer) {
+        log("notification.skipped", { sessionID, event: notification.event, reason: "replaced_timer" })
         return
       }
       pendingNotifications.delete(sessionID)
 
       const currentTailId = await readTailMessageId(sessionID)
       if (currentTailId !== undefined && currentTailId !== tailMessageId) {
+        log("notification.skipped", { sessionID, event: notification.event, reason: "tail_changed", tailMessageId, currentTailId })
         return
       }
-      emit(notification)
+      log("tail.reviewed", { sessionID, event: notification.event, tailMessageId, currentTailId: currentTailId ?? null, verified: currentTailId !== undefined })
+      notify(notification, sessionID)
     }, delayMs)
 
     pendingNotifications.set(sessionID, timer)
+    log("notification.scheduled", { sessionID, event: notification.event, delayMs, tailMessageId })
   }
 
   return {
@@ -161,19 +191,26 @@ export function createEventHooks(
       if (runtimeEvent.type === "permission.asked") {
         const sessionID = runtimeEvent.properties.sessionID
         if (!tracker.shouldSuppressPermission(sessionID, now())) {
-          emit({
+          notify({
             event: "permission",
             sessionTitle: tracker.getSession(sessionID)?.title ?? null,
             durationMs: null,
-          })
+          }, sessionID)
+        } else {
+          log("notification.skipped", { sessionID, event: "permission", reason: "duplicate_permission" })
         }
         return
       }
 
       if (runtimeEvent.type === "session.status") {
         const { sessionID, status } = runtimeEvent.properties
+        const wasActive = tracker.getSession(sessionID)?.active ?? false
         const completion = tracker.updateStatus(sessionID, status, now())
+        log("session.status", { sessionID, status: status.type, wasActive, completion: completion !== null })
         if (!completion) {
+          if (status.type === "idle") {
+            log("notification.skipped", { sessionID, event: "complete", reason: "no_active_transition" })
+          }
           return
         }
 
@@ -181,6 +218,7 @@ export function createEventHooks(
           await refreshSession(client, tracker, sessionID)
         }
         const session = tracker.getSession(sessionID)
+        log("completion.classified", { sessionID, isChild: session?.isChild ?? null, durationMs: completion.durationMs })
         await scheduleDelayedNotification(sessionID, {
           event: session?.isChild === true ? "subagent_complete" : "complete",
           sessionTitle: session?.title ?? completion.title,
@@ -197,8 +235,9 @@ export function createEventHooks(
         }
 
         const errorName = (runtimeEvent.properties.error as { name?: string } | undefined)?.name
+        log("session.error", { sessionID, cancelled: errorName === "MessageAbortedError" || errorName === "AbortError" })
         if (errorName === "MessageAbortedError" || errorName === "AbortError") {
-          emit({ event: "cancelled", sessionTitle, durationMs: null })
+          notify({ event: "cancelled", sessionTitle, durationMs: null }, sessionID)
           return
         }
 
@@ -207,27 +246,29 @@ export function createEventHooks(
           return
         }
 
-        emit({ event: "error", sessionTitle, durationMs: null })
+        notify({ event: "error", sessionTitle, durationMs: null }, sessionID)
       }
     },
 
     "permission.ask": async (input) => {
       if (!tracker.shouldSuppressPermission(input.sessionID, now())) {
-        emit({
+        notify({
           event: "permission",
           sessionTitle: tracker.getSession(input.sessionID)?.title ?? null,
           durationMs: null,
-        })
+        }, input.sessionID)
+      } else {
+        log("notification.skipped", { sessionID: input.sessionID, event: "permission", reason: "duplicate_permission" })
       }
     },
 
     "tool.execute.before": async (input) => {
       if (input.tool === "question") {
-        emit({
+        notify({
           event: "question",
           sessionTitle: tracker.getSession(input.sessionID)?.title ?? null,
           durationMs: null,
-        })
+        }, input.sessionID)
       }
     },
   }

@@ -11,6 +11,7 @@ function createHarness(
   initialTail: TailMessage[] = [],
 ) {
   const emitted: LogicalEvent[] = []
+  const logs: Array<{ message: string; extra: Record<string, unknown> }> = []
   let clock = 1_000
   let tail = initialTail
   let messagesShouldFail = false
@@ -56,10 +57,12 @@ function createHarness(
     now: () => clock,
     scheduler,
     delayMs: 8_000,
+    log: (message, extra) => { logs.push({ message, extra }) },
   })
 
   return {
     emitted,
+    logs,
     hooks,
     childrenQueries,
     setStatuses(value: Record<string, SessionStatus>) {
@@ -229,6 +232,8 @@ describe("OpenCode event mapping", () => {
 
       expect(harness.childrenQueries).toEqual(["main"])
       expect(harness.pendingDelays()).toEqual([])
+      expect(harness.logs).toContainEqual({ message: "notification.skipped", extra: { sessionID: "main", event: "complete", reason: "busy_children" } })
+      expect(harness.logs).toContainEqual({ message: "children.checked", extra: { sessionID: "main", childCount: 1, busyChildren: [{ sessionID: "child", status: status.type }] } })
       harness.setStatuses({})
       await harness.runTimers()
       expect(harness.emitted).toEqual([])
@@ -278,6 +283,23 @@ describe("OpenCode event mapping", () => {
     await harness.runTimers()
     expect(harness.childrenQueries).toEqual([])
     expect(harness.emitted.map((event) => event.event)).toEqual(["subagent_complete", "error"])
+  })
+
+  test("diagnostics distinguish inactive idle, scheduling, tail changes and emission", async () => {
+    const harness = createHarness({}, [{ info: { id: "first" } }])
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+    expect(harness.logs).toContainEqual({ message: "notification.skipped", extra: { sessionID: "main", event: "complete", reason: "no_active_transition" } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+    expect(harness.logs).toContainEqual({ message: "notification.scheduled", extra: { sessionID: "main", event: "complete", delayMs: 8_000, tailMessageId: "first" } })
+    harness.setTail([{ info: { id: "second" } }])
+    await harness.runTimers()
+    expect(harness.logs).toContainEqual({ message: "notification.skipped", extra: { sessionID: "main", event: "complete", reason: "tail_changed", tailMessageId: "first", currentTailId: "second" } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "busy" } } })
+    await publish(harness.hooks, { type: "session.status", properties: { sessionID: "main", status: { type: "idle" } } })
+    await harness.runTimers()
+    expect(harness.logs).toContainEqual({ message: "notification.emit", extra: { sessionID: "main", event: "complete" } })
+    expect(harness.emitted).toHaveLength(1)
   })
 
   test("deprecated session.idle and unrelated events are ignored", async () => {
